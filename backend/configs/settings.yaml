@@ -1,0 +1,30 @@
+# RAG-AQG Backend v3 Configuration File
+
+app:
+  backend_host: "0.0.0.0"
+  backend_port: 8000
+  frontend_port: 3000
+  cors_origins:
+    - "http://localhost:3000"
+
+llm:
+  provider: "groq"                                # "groq" or "ollama"
+  groq_api_key: "REDACTED_GROQ_API_KEY"
+  ollama_base_url: "http://localhost:11434"
+  generator_model: "qwen/qwen3.6-27b"
+  judge_model: "qwen/qwen3.6-27b"
+  embedding_model: "BAAI/bge-m3"
+
+validation:
+  grounding_threshold: 0.50
+  grounding_auto_pass_threshold: 0.80
+  max_refinement_attempts: 3
+
+database:
+  url: "sqlite:///./data/rag_aqg.db"
+  chroma_persist_dir: "./data/chroma"
+
+retrieval:
+  top_k: 5
+  hybrid_dense_weight: 0.6
+  hybrid_sparse_weight: 0.4
