@@ -1,16 +1,21 @@
-"""Pydantic schemas module."""
-from app.schemas.api import (
-    ChatMessageCreate,
-    ChatMessageResponse,
+"""Pydantic schemas package."""
+from app.schemas.api_schemas import (
+    DocumentUploadResponse,
+    DocumentStatusResponse,
     ChatSessionCreate,
     ChatSessionResponse,
-    DocumentStatusResponse,
-    DocumentUploadResponse,
-    ErrorResponse,
-    GenerateRequest,
+    ChatSessionListItem,
+    ChatMessageCreate,
+    ChatMessageResponse,
+    GenerateParams,
     QuestionOption,
+    UsedChunkResponse,
     QuestionResponse,
+    QuestionListResponse,
     ValidationLogResponse,
+    QuestionDetailResponse,
+    GenerateRequest,
+    ErrorResponse,
 )
 
 __all__ = [
@@ -18,11 +23,16 @@ __all__ = [
     "DocumentStatusResponse",
     "ChatSessionCreate",
     "ChatSessionResponse",
+    "ChatSessionListItem",
     "ChatMessageCreate",
     "ChatMessageResponse",
+    "GenerateParams",
     "QuestionOption",
+    "UsedChunkResponse",
     "QuestionResponse",
+    "QuestionListResponse",
     "ValidationLogResponse",
+    "QuestionDetailResponse",
     "GenerateRequest",
     "ErrorResponse",
 ]

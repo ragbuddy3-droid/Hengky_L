@@ -27,6 +27,7 @@ Testing Program v3/
 cd backend
 uv sync
 uv run uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### 2. Frontend Setup (Next.js with `bun`)

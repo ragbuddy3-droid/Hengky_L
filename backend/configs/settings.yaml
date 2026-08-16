@@ -1,4 +1,4 @@
-# RAG-AQG Backend v3 Configuration File
+# RAG-AQG Backend v4 Configuration File (Pure YAML)
 
 app:
   backend_host: "0.0.0.0"
@@ -11,8 +11,8 @@ llm:
   provider: "groq"                                # "groq" or "ollama"
   groq_api_key: "REDACTED_GROQ_API_KEY"
   ollama_base_url: "http://localhost:11434"
-  generator_model: "qwen/qwen3.6-27b"
-  judge_model: "qwen/qwen3.6-27b"
+  generator_model: "llama-3.3-70b-versatile"
+  judge_model: "llama-3.3-70b-versatile"
   embedding_model: "BAAI/bge-m3"
 
 validation:
@@ -28,3 +28,9 @@ retrieval:
   top_k: 5
   hybrid_dense_weight: 0.6
   hybrid_sparse_weight: 0.4
+
+chunking:
+  fixed_chunk_size: 1000
+  fixed_chunk_overlap: 150
+  semantic_breakpoint_type: "percentile"
+  semantic_breakpoint_threshold: 95

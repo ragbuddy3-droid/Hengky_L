@@ -13,7 +13,7 @@ export default function DocumentsPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<string>('IPAS');
-  const [selectedChunkingStrategy, setSelectedChunkingStrategy] = useState<string>('structured');
+  const [selectedChunkingStrategy, setSelectedChunkingStrategy] = useState<string>('fixed');
 
   // Chunk Drawer State
   const [selectedDocForChunks, setSelectedDocForChunks] = useState<Document | null>(null);
@@ -64,7 +64,7 @@ export default function DocumentsPage() {
       await api.uploadDocument(file, selectedSubject, selectedChunkingStrategy);
       notifications.show({
         title: 'Upload Berhasil',
-        message: `${file.name} telah diunggah dan sedang diproses dengan strategi ${selectedChunkingStrategy === 'structured' ? 'Structure Chunking' : 'PA-Chunking'}.`,
+        message: `${file.name} telah diunggah dan sedang diproses dengan strategi ${selectedChunkingStrategy === 'fixed' ? 'Fixed Chunking' : 'Semantic Chunking'}.`,
         color: 'green',
         icon: <IconCheck size={18} />,
       });
@@ -191,10 +191,10 @@ export default function DocumentsPage() {
             label="Metode Chunking"
             placeholder="Pilih Strategi"
             value={selectedChunkingStrategy}
-            onChange={(val) => setSelectedChunkingStrategy(val || 'structured')}
+            onChange={(val) => setSelectedChunkingStrategy(val || 'fixed')}
             data={[
-              { value: 'structured', label: 'Structure Chunking (Rekomendasi)' },
-              { value: 'pac', label: 'PA-Chunking (Pedagogical)' },
+              { value: 'fixed', label: 'Fixed Chunking (Rekomendasi)' },
+              { value: 'semantic', label: 'Semantic Chunking (Berbasis Makna)' },
             ]}
             style={{ width: '280px' }}
           />
@@ -269,9 +269,9 @@ export default function DocumentsPage() {
                   <Table.Td>
                     <Badge
                       variant="light"
-                      color={doc.chunking_strategy === 'pac' ? 'violet' : 'cyan'}
+                      color={doc.chunking_strategy === 'semantic' ? 'violet' : 'cyan'}
                     >
-                      {doc.chunking_strategy === 'pac' ? 'PA-Chunking' : 'Structure Chunking'}
+                      {doc.chunking_strategy === 'semantic' ? 'Semantic Chunking' : 'Fixed Chunking'}
                     </Badge>
                   </Table.Td>
                   <Table.Td>{renderStatusBadge(doc.status)}</Table.Td>

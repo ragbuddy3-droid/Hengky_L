@@ -1,36 +1,31 @@
 """Questions API router v1."""
+
 import json
 import logging
-from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
-from pydantic import BaseModel
-from app.db.engine import get_session
-from app.db.models import Question, ValidationLog, Chunk
-from app.schemas.api import ValidationLogResponse, QuestionDetailResponse, UsedChunkResponse
+from fastapi import APIRouter, HTTPException, Query
+
+from app.core.database import get_session
+from app.models.db_models import Question, ValidationLog, Chunk
+from app.schemas.api_schemas import ValidationLogResponse, QuestionDetailResponse, UsedChunkResponse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/questions", tags=["questions"])
 
 
-
 @router.get("/{question_id}", response_model=QuestionDetailResponse)
 def get_question(question_id: str):
     """Get question detail with validation logs and used context chunks."""
-    logger.debug("GET question detail: question_id='%s'", question_id)
     with get_session() as db:
         q = db.query(Question).filter(Question.id == question_id).first()
         if not q:
-            logger.warning("Question not found: question_id='%s'", question_id)
             raise HTTPException(status_code=404, detail="Question not found")
 
         logs = db.query(ValidationLog).filter(
             ValidationLog.question_id == question_id
-        ).all()
-        
-        logger.debug("Question found: question_id='%s', status='%s', validation_logs=%d",
-                    question_id, q.status, len(logs))
-        
+        ).order_by(ValidationLog.created_at.asc()).all()
+
         log_responses = [
             ValidationLogResponse(
                 id=log.id,
@@ -48,7 +43,6 @@ def get_question(question_id: str):
                 c_ids = json.loads(q.chunk_ids) if isinstance(q.chunk_ids, str) else q.chunk_ids
                 if isinstance(c_ids, list) and c_ids:
                     db_chunks = db.query(Chunk).filter(Chunk.id.in_(c_ids)).all()
-                    # Preserve original order from c_ids if possible
                     chunk_map = {c.id: c for c in db_chunks}
                     for cid in c_ids:
                         if cid in chunk_map:
@@ -93,13 +87,12 @@ def get_question(question_id: str):
 @router.get("/")
 def list_questions(session_id: Optional[str] = Query(None)):
     """List questions, filterable by session_id."""
-    logger.debug("GET list questions (session_id=%s)", session_id or '(all)')
     with get_session() as db:
         query = db.query(Question)
         if session_id:
             query = query.filter(Question.session_id == session_id)
-        questions = query.all()
-        logger.debug("Returning %d questions", len(questions))
+        questions = query.order_by(Question.created_at.desc()).all()
+
         result = []
         for q in questions:
             opts = None
@@ -108,6 +101,7 @@ def list_questions(session_id: Optional[str] = Query(None)):
                     opts = json.loads(q.options) if isinstance(q.options, str) else q.options
                 except Exception:
                     opts = None
+
             result.append({
                 "id": q.id,
                 "question_type": getattr(q, "question_type", "esai") or "esai",
