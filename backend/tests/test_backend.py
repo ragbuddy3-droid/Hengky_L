@@ -1,12 +1,12 @@
 """Unit and integration tests for backend_new."""
 
-import pytest
 from fastapi.testclient import TestClient
-from app.main import app
+
 from app.core.config import get_settings
-from app.services.ingestion.factory import get_chunker, chunk_text, ChunkerStrategy
-from app.services.retrieval.sparse_index import SparseIndex
+from app.main import app
+from app.services.ingestion.factory import chunk_text
 from app.services.retrieval.hybrid_search import reciprocal_rank_fusion
+from app.services.retrieval.sparse_index import SparseIndex
 
 client = TestClient(app)
 
@@ -26,9 +26,10 @@ def test_settings_pure_yaml():
     """Verify settings loaded properly from YAML."""
     settings = get_settings()
     assert settings.app.backend_port == 8000
-    assert settings.llm.provider in ("groq", "ollama")
+    assert settings.llm.provider in ("openrouter", "openai", "groq", "ollama")
     assert settings.validation.grounding_auto_pass_threshold == 0.80
     assert settings.chunking.fixed_chunk_size == 1000
+
 
 
 def test_fixed_chunker():

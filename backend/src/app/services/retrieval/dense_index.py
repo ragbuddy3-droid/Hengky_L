@@ -2,7 +2,8 @@
 
 import logging
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any
+
 import chromadb
 from sentence_transformers import SentenceTransformer
 
@@ -38,7 +39,7 @@ class DenseIndex:
         """Access underlying SentenceTransformer model (e.g. for grounding validation)."""
         return self._model
 
-    def index_chunks(self, chunks: List[Dict[str, Any]]) -> None:
+    def index_chunks(self, chunks: list[dict[str, Any]]) -> None:
         """Encode chunks and insert into ChromaDB."""
         if not chunks:
             logger.warning("DenseIndex: empty chunks received for indexing.")
@@ -72,7 +73,7 @@ class DenseIndex:
 
         logger.info("Successfully indexed %d chunks in ChromaDB.", len(chunks))
 
-    def query(self, query_text: str, top_k: int = 5) -> List[Dict[str, Any]]:
+    def query(self, query_text: str, top_k: int = 5) -> list[dict[str, Any]]:
         """Query ChromaDB vector store and return ranked chunks."""
         if not query_text or not query_text.strip() or self.collection.count() == 0:
             return []
@@ -84,7 +85,7 @@ class DenseIndex:
             include=["documents", "metadatas", "distances"]
         )
 
-        output: List[Dict[str, Any]] = []
+        output: list[dict[str, Any]] = []
         if results and results["ids"] and len(results["ids"][0]) > 0:
             for idx in range(len(results["ids"][0])):
                 chunk_id = results["ids"][0][idx]

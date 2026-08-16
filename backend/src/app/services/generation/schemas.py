@@ -1,0 +1,107 @@
+"""Pydantic schemas and dataclasses for Multi-Stage Question Generation."""
+
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class TestableContentItem(BaseModel):
+    point: str = Field(description="Substansi materi yang dapat diuji")
+    source_quote: str = Field(description="Kutipan kalimat persis dari konteks buku")
+
+
+class ContentAnalysis(BaseModel):
+    """Output of Stage 1 — Context Understanding."""
+    topic: str = Field(default="", description="Topik utama materi")
+    subtopics: list[str] = Field(default_factory=list, description="Daftar subtopik")
+    key_concepts: list[str] = Field(default_factory=list, description="Konsep-konsep penting")
+    key_facts: list[str] = Field(default_factory=list, description="Fakta-fakta eksplisit dari konteks")
+    relationships: list[str] = Field(default_factory=list, description="Hubungan sebab-akibat atau perbandingan")
+    processes: list[str] = Field(default_factory=list, description="Proses atau tahapan jika ada")
+    testable_content: list[TestableContentItem] = Field(default_factory=list, description="Poin materi yang dapat diuji")
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class CognitivePlan(BaseModel):
+    """Output of Stage 2 — Cognitive Bloom Planning."""
+    cognitive_level: str = Field(default="C2-Memahami", description="Target level kognitif (C1-C4)")
+    cognitive_operation: str = Field(default="", description="Operasi kognitif yang ditargetkan")
+    student_task: str = Field(default="", description="Tugas spesifik yang harus dilakukan siswa")
+    reasoning_required: str = Field(default="", description="Penalaran yang dibutuhkan siswa")
+    expected_evidence: str = Field(default="", description="Bukti pemahaman yang diharapkan")
+    recommended_question_format: str = Field(default="esai", description="Format soal (isian_singkat / esai_pendek / esai)")
+    prohibited_question_pattern: list[str] = Field(default_factory=list, description="Pola pertanyaan yang dilarang")
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class QuestionBlueprint(BaseModel):
+    """Output of Stage 3 — Question Blueprint."""
+    knowledge_point: str = Field(default="", description="Pokok bahasan spesifik yang diuji")
+    question_type: str = Field(default="esai", description="Format soal (isian_singkat / esai)")
+    question_intent: str = Field(default="", description="Tujuan/indikator pengukuran siswa")
+    grounding_evidence: str = Field(default="", description="Kutipan persis dari teks buku sebagai bukti grounding")
+    expected_answer_elements: list[str] = Field(default_factory=list, description="Poin-poin kunci jawaban ideal")
+    answer_scope: str = Field(default="", description="Batasan panjang dan kedalaman jawaban siswa SD")
+    scoring_criteria: list[str] = Field(default_factory=list, description="Kriteria penskoran umum")
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class AnswerElement(BaseModel):
+    element: str = Field(description="Elemen kunci atau poin jawaban")
+    weight: int | float = Field(default=1, description="Bobot penilaian elemen ini")
+
+
+class RubricCriterion(BaseModel):
+    score: int = Field(description="Skor pencapaian (misal 0, 1, 2)")
+    criteria: str = Field(description="Kriteria pemenuhan untuk mendapatkan skor ini")
+
+
+class QuestionPackage(BaseModel):
+    """Output of Stage 4 — Question Generation Package."""
+    question: str = Field(description="Teks pertanyaan untuk siswa SD")
+    question_type: str = Field(default="esai", description="Tipe soal (isian_singkat / esai)")
+    cognitive_level: str = Field(default="C2-Memahami", description="Tingkat kognitif Bloom")
+    knowledge_point: str = Field(default="", description="Pokok materi")
+    grounding_evidence: str = Field(default="", description="Kutipan kalimat bukti dari buku")
+    expected_answer: str = Field(description="Jawaban ideal yang benar dan konkret")
+    answer_elements: list[AnswerElement] = Field(default_factory=list, description="Rincian poin kunci jawaban")
+    rubric: list[RubricCriterion] = Field(default_factory=list, description="Rubrik penilaian bertingkat")
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class JudgeAspectResult(BaseModel):
+    status: str = Field(default="pass", description="pass atau fail")
+    score: float | None = Field(default=None, description="Skor numerik jika relevan")
+    detected_level: str | None = Field(default=None, description="Level kognitif yang terdeteksi")
+    feedback: str = Field(default="", description="Catatan atau masukan evaluasi")
+
+
+class JudgeEvaluationResult(BaseModel):
+    """Output of LLM-as-Judge Layer 2."""
+    grounding: JudgeAspectResult = Field(default_factory=lambda: JudgeAspectResult(status="pass"))
+    bloom_adherence: JudgeAspectResult = Field(default_factory=lambda: JudgeAspectResult(status="pass"))
+    bahasa: JudgeAspectResult = Field(default_factory=lambda: JudgeAspectResult(status="pass"))
+    answerability: JudgeAspectResult = Field(default_factory=lambda: JudgeAspectResult(status="pass"))
+    answer_alignment: JudgeAspectResult = Field(default_factory=lambda: JudgeAspectResult(status="pass"))
+    rubric_alignment: JudgeAspectResult = Field(default_factory=lambda: JudgeAspectResult(status="pass"))
+    overall: str = Field(default="pass", description="pass atau fail")
+    failed_stage: str = Field(default="none", description="generation / planning / none")
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class PromptStageTrace(BaseModel):
+    """Jejak eksekusi prompt untuk audit dan inspeksi."""
+    stage_name: str = Field(description="Nama tahap (Stage 1, Stage 2, Stage 3, Stage 4, Judge, Refinement A, Refinement B)")
+    step_number: int = Field(default=1, description="Nomor urutan tahap")
+    attempt_number: int = Field(default=1, description="Nomor iterasi percobaan")
+    prompt_sent: str = Field(description="Teks prompt lengkap yang dikirim ke LLM")
+    raw_response: str = Field(description="Respons mentah yang dikembalikan oleh LLM")
+    parsed_output: dict[str, Any] = Field(default_factory=dict, description="Hasil data terstruktur (JSON)")
+    latency_ms: int = Field(default=0, description="Durasi eksekusi dalam milidetik")
+    status: str = Field(default="success", description="success / error / fallback")
+    error_message: str | None = Field(default=None, description="Pesan error jika ada")

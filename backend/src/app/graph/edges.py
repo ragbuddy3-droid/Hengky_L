@@ -1,7 +1,9 @@
 """Routing and conditional edges for the AQG LangGraph StateGraph."""
 
 import logging
+
 from langgraph.graph import END
+
 from app.graph.state import AQGState
 
 logger = logging.getLogger(__name__)

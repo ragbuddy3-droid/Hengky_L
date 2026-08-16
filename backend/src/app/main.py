@@ -2,14 +2,15 @@
 
 import logging
 from contextlib import asynccontextmanager
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.config import get_settings
-from app.core.logging_config import setup_logging
-from app.core.database import init_db
 from app.api.v1.router import router
+from app.core.config import get_settings
+from app.core.database import init_db
+from app.core.logging_config import setup_logging
 from app.graph.workflow import get_aqg_graph
 
 logger = logging.getLogger(__name__)

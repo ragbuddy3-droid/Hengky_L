@@ -1,8 +1,9 @@
 """Chat session persistence store operations."""
 
 import logging
-from typing import List, Optional
+
 from sqlalchemy.orm import Session
+
 from app.models.db_models import ChatSession
 
 logger = logging.getLogger(__name__)
@@ -17,12 +18,12 @@ def create_session(db: Session, document_id: str) -> ChatSession:
     return session
 
 
-def get_chat_session(db: Session, session_id: str) -> Optional[ChatSession]:
+def get_chat_session(db: Session, session_id: str) -> ChatSession | None:
     """Retrieve chat session by ID."""
     return db.query(ChatSession).filter(ChatSession.id == session_id).first()
 
 
-def list_chat_sessions(db: Session, document_id: Optional[str] = None) -> List[ChatSession]:
+def list_chat_sessions(db: Session, document_id: str | None = None) -> list[ChatSession]:
     """List chat sessions with optional document filter."""
     query = db.query(ChatSession)
     if document_id:

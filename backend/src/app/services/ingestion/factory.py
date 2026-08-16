@@ -1,17 +1,16 @@
 """Chunker Factory and Strategy Dispatcher."""
 
-from enum import Enum
 import logging
-from typing import Union, Optional, List
+from enum import StrEnum
 
-from app.core.config import get_settings, Settings
-from app.services.ingestion.chunkers.fixed_chunker import FixedChunker, ChunkResult
+from app.core.config import Settings, get_settings
+from app.services.ingestion.chunkers.fixed_chunker import ChunkResult, FixedChunker
 from app.services.ingestion.chunkers.semantic_chunker import SemanticChunkerWrapper
 
 logger = logging.getLogger(__name__)
 
 
-class ChunkerStrategy(str, Enum):
+class ChunkerStrategy(StrEnum):
     FIXED = "fixed"
     SEMANTIC = "semantic"
 
@@ -21,19 +20,17 @@ _chunker_cache = {}
 
 
 def get_chunker(
-    strategy: Union[str, ChunkerStrategy] = ChunkerStrategy.FIXED,
-    settings: Optional[Settings] = None
-) -> Union[FixedChunker, SemanticChunkerWrapper]:
+    strategy: str | ChunkerStrategy = ChunkerStrategy.FIXED,
+    settings: Settings | None = None
+) -> FixedChunker | SemanticChunkerWrapper:
     """Factory method to retrieve a chunker instance based on strategy."""
     if settings is None:
         settings = get_settings()
 
-    if isinstance(strategy, ChunkerStrategy):
-        strat_str = strategy.value.lower()
-    else:
-        strat_str = str(strategy).lower()
+    strat_str = strategy.value.lower() if isinstance(strategy, ChunkerStrategy) else str(strategy).lower()
 
     if strat_str in ("semantic", "semantic_chunking"):
+
         cache_key = f"semantic_{settings.llm.embedding_model}_{settings.chunking.semantic_breakpoint_threshold}"
         if cache_key not in _chunker_cache:
             _chunker_cache[cache_key] = SemanticChunkerWrapper(
@@ -55,9 +52,9 @@ def get_chunker(
 
 def chunk_text(
     text: str,
-    strategy: Union[str, ChunkerStrategy] = ChunkerStrategy.FIXED,
-    settings: Optional[Settings] = None
-) -> List[ChunkResult]:
+    strategy: str | ChunkerStrategy = ChunkerStrategy.FIXED,
+    settings: Settings | None = None
+) -> list[ChunkResult]:
     """Convenience function to chunk text using the specified strategy."""
     chunker = get_chunker(strategy, settings=settings)
     return chunker.chunk(text)

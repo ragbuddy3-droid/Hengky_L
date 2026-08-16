@@ -1,9 +1,9 @@
 """Fixed-size chunker using LangChain RecursiveCharacterTextSplitter with pedagogical metadata enrichment."""
 
-import re
 import logging
+import re
 from dataclasses import dataclass
-from typing import List, Optional
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 logger = logging.getLogger(__name__)
@@ -14,8 +14,8 @@ class ChunkResult:
     """Standardized chunk representation across all chunkers."""
     text: str
     category: str  # "Konsep" | "Narasi" | "Instruksi" | "Evaluasi"
-    section_heading: Optional[str] = None
-    chapter: Optional[str] = None
+    section_heading: str | None = None
+    chapter: str | None = None
 
 
 class FixedChunker:
@@ -47,7 +47,7 @@ class FixedChunker:
             return "Konsep"
         return "Narasi"
 
-    def _extract_chapter_and_heading(self, text: str, prev_chapter: Optional[str], prev_heading: Optional[str]):
+    def _extract_chapter_and_heading(self, text: str, prev_chapter: str | None, prev_heading: str | None):
         """Extract or inherit chapter and heading from text lines."""
         chapter = prev_chapter
         heading = prev_heading
@@ -60,13 +60,17 @@ class FixedChunker:
                 chapter = chap_match.group(0)
 
             # Section heading pattern (short line, uppercase or title-case, no trailing period)
-            if 2 <= len(line.split()) <= 8 and not line.endswith((".", ":", "?", "!")):
-                if not re.search(r'^(gambar|tabel|sumber)\b', line, re.IGNORECASE):
-                    heading = line
+            if (
+                2 <= len(line.split()) <= 8
+                and not line.endswith((".", ":", "?", "!"))
+                and not re.search(r'^(gambar|tabel|sumber)\b', line, re.IGNORECASE)
+            ):
+                heading = line
 
         return chapter, heading
 
-    def chunk(self, text: str, max_chunk_size: Optional[int] = None) -> List[ChunkResult]:
+
+    def chunk(self, text: str, max_chunk_size: int | None = None) -> list[ChunkResult]:
         """Split text into chunks with pedagogical metadata."""
         if not text or not text.strip():
             logger.warning("FixedChunker received empty text.")
@@ -82,9 +86,9 @@ class FixedChunker:
             )
 
         docs = splitter.create_documents([text])
-        results: List[ChunkResult] = []
-        current_chapter: Optional[str] = None
-        current_heading: Optional[str] = None
+        results: list[ChunkResult] = []
+        current_chapter: str | None = None
+        current_heading: str | None = None
 
         for doc in docs:
             content = doc.page_content.strip()

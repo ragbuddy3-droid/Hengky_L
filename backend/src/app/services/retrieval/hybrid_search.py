@@ -1,8 +1,9 @@
 """Hybrid retrieval combining dense vector search and sparse lexical search using Reciprocal Rank Fusion (RRF)."""
 
-import re
 import logging
-from typing import List, Dict, Any
+import re
+from typing import Any
+
 from app.services.retrieval.dense_index import DenseIndex
 from app.services.retrieval.sparse_index import SparseIndex
 
@@ -35,21 +36,22 @@ def is_exercise_or_instruction_chunk(chunk_text: str) -> bool:
 
     # High frequency of question marks without explanatory concept definitions
     q_mark_count = text_lower.count('?')
-    if q_mark_count >= 2:
-        if not re.search(r'\b(adalah|merupakan|yaitu|disebut|fungsi|proses|sistem|organ)\b', text_lower):
-            return True
+    return bool(
+        q_mark_count >= 2
+        and not re.search(r'\b(adalah|merupakan|yaitu|disebut|fungsi|proses|sistem|organ)\b', text_lower)
+    )
 
-    return False
+
 
 
 def reciprocal_rank_fusion(
-    dense_results: List[Dict[str, Any]],
-    sparse_results: List[Dict[str, Any]],
+    dense_results: list[dict[str, Any]],
+    sparse_results: list[dict[str, Any]],
     k: int = 60
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Implement Reciprocal Rank Fusion algorithm across ranked lists."""
-    scores: Dict[str, float] = {}
-    items: Dict[str, Dict[str, Any]] = {}
+    scores: dict[str, float] = {}
+    items: dict[str, dict[str, Any]] = {}
 
     for rank, item in enumerate(dense_results):
         item_id = item["id"]
@@ -67,7 +69,7 @@ def reciprocal_rank_fusion(
 
     sorted_items = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     for item_id, score in sorted_items:
         res = items[item_id].copy()
         res["rrf_score"] = score
@@ -91,7 +93,7 @@ class HybridSearch:
         self.dense_weight = dense_weight
         self.sparse_weight = sparse_weight
 
-    def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+    def search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
         """Run dense and sparse queries, fuse with RRF, and filter noise/exercises."""
         dense_results = self.dense_index.query(query, top_k=top_k * 2)
         sparse_results = self.sparse_index.query(query, top_k=top_k * 2)

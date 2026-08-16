@@ -1,22 +1,24 @@
 """StateGraph assembly and compilation for RAG-AQG workflow."""
 
 import logging
-from langgraph.graph import StateGraph, END
-from app.graph.state import AQGState
-from app.graph.nodes import (
-    retrieve_context,
-    generate_questions,
-    grounding_validation,
-    llm_judge_evaluation,
-    self_refinement,
-    persist_questions,
-)
+
+from langgraph.graph import END, StateGraph
+
 from app.graph.edges import (
     route_after_generation,
     route_after_grounding,
     route_after_judge,
     route_after_persist,
 )
+from app.graph.nodes import (
+    generate_questions,
+    grounding_validation,
+    llm_judge_evaluation,
+    persist_questions,
+    retrieve_context,
+    self_refinement,
+)
+from app.graph.state import AQGState
 
 logger = logging.getLogger(__name__)
 

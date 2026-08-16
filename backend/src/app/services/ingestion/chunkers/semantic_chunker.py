@@ -1,10 +1,11 @@
 """Semantic chunker using LangChain SemanticChunker with sentence embeddings."""
 
-import re
 import logging
-from typing import List, Optional
+import re
+
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_huggingface import HuggingFaceEmbeddings
+
 from app.services.ingestion.chunkers.fixed_chunker import ChunkResult
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,7 @@ class SemanticChunkerWrapper:
             return "Konsep"
         return "Narasi"
 
-    def _extract_chapter_and_heading(self, text: str, prev_chapter: Optional[str], prev_heading: Optional[str]):
+    def _extract_chapter_and_heading(self, text: str, prev_chapter: str | None, prev_heading: str | None):
         """Extract or inherit chapter and heading from text lines."""
         chapter = prev_chapter
         heading = prev_heading
@@ -65,13 +66,17 @@ class SemanticChunkerWrapper:
             if chap_match:
                 chapter = chap_match.group(0)
 
-            if 2 <= len(line.split()) <= 8 and not line.endswith((".", ":", "?", "!")):
-                if not re.search(r'^(gambar|tabel|sumber)\b', line, re.IGNORECASE):
-                    heading = line
+            if (
+                2 <= len(line.split()) <= 8
+                and not line.endswith((".", ":", "?", "!"))
+                and not re.search(r'^(gambar|tabel|sumber)\b', line, re.IGNORECASE)
+            ):
+                heading = line
 
         return chapter, heading
 
-    def chunk(self, text: str, max_chunk_size: Optional[int] = None) -> List[ChunkResult]:
+
+    def chunk(self, text: str, max_chunk_size: int | None = None) -> list[ChunkResult]:
         """Split text into semantic chunks with pedagogical metadata."""
         if not text or not text.strip():
             logger.warning("SemanticChunker received empty text.")
@@ -79,9 +84,9 @@ class SemanticChunkerWrapper:
 
         logger.info("Starting semantic chunking on text length: %d chars...", len(text))
         docs = self._splitter.create_documents([text])
-        results: List[ChunkResult] = []
-        current_chapter: Optional[str] = None
-        current_heading: Optional[str] = None
+        results: list[ChunkResult] = []
+        current_chapter: str | None = None
+        current_heading: str | None = None
 
         for doc in docs:
             content = doc.page_content.strip()

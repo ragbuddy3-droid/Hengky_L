@@ -1,10 +1,10 @@
 """PDF text extraction module with page-aware front-matter and back-matter filtering."""
 
+import logging
 import re
 import time
-import logging
 from pathlib import Path
-from typing import List
+
 import pdfplumber
 from pypdf import PdfReader
 
@@ -54,7 +54,7 @@ def is_roman_numeral(val: str) -> bool:
     return bool(ROMAN_REGEX.match(val.strip().lower()))
 
 
-def is_front_matter_page(raw_text: str, lines: List[str], page_idx: int) -> bool:
+def is_front_matter_page(raw_text: str, lines: list[str], page_idx: int) -> bool:
     """Determine if a page belongs to front matter."""
     text_norm = normalize_text_fonts(raw_text).lower()
 
@@ -72,10 +72,10 @@ def is_front_matter_page(raw_text: str, lines: List[str], page_idx: int) -> bool
                 return True
 
     # 3. Check for copyright / Ministry info on very early pages
-    if page_idx < 4 and any(kw in text_norm for kw in ['hak cipta', 'kementerian pendidikan', 'isbn', 'sanksi pelanggaran']):
-        return True
-
-    return False
+    return bool(
+        page_idx < 4
+        and any(kw in text_norm for kw in ['hak cipta', 'kementerian pendidikan', 'isbn', 'sanksi pelanggaran'])
+    )
 
 
 def extract_text_from_pdf(file_path: Path) -> str:
@@ -90,7 +90,7 @@ def extract_text_from_pdf(file_path: Path) -> str:
 
             for i, page in enumerate(pdf.pages):
                 extracted = page.extract_text() or ""
-                lines = [l.strip() for l in extracted.split('\n') if l.strip()]
+                lines = [line_str.strip() for line_str in extracted.split('\n') if line_str.strip()]
                 if not lines:
                     continue
 
@@ -98,8 +98,8 @@ def extract_text_from_pdf(file_path: Path) -> str:
                 is_bab1_start = False
                 page_norm = normalize_text_fonts(extracted)
                 if re.search(r'\b(Bab|Chapter|Unit|Pembelajaran|Modul)\b', page_norm, re.IGNORECASE):
-                    for l in lines[:10]:
-                        l_norm = normalize_text_fonts(l).strip()
+                    for line_str in lines[:10]:
+                        l_norm = normalize_text_fonts(line_str).strip()
                         if '...' in l_norm or '....' in l_norm:
                             continue
                         if re.search(r'^\s*(Bab|Chapter|Unit|Pembelajaran|Modul)?\s*(1|I)\b', l_norm, re.IGNORECASE) or l_norm in ['1', 'I']:
@@ -138,9 +138,10 @@ def extract_text_from_pdf(file_path: Path) -> str:
 
         for i, page in enumerate(reader.pages):
             extracted = page.extract_text() or ""
-            lines = [l.strip() for l in extracted.split('\n') if l.strip()]
+            lines = [line_str.strip() for line_str in extracted.split('\n') if line_str.strip()]
             if not lines:
                 continue
+
 
             is_bab1_start = False
             for line in lines[:5]:

@@ -1,25 +1,39 @@
-"""LangGraph Node implementations for RAG-AQG generation, 2-layer validation, and persistence."""
+"""LangGraph Node implementations for Multi-Stage RAG-AQG generation, 2-layer validation, and persistence."""
 
-import re
 import json
-import uuid
-import time
 import logging
-import numpy as np
-from typing import List, Dict, Any, Optional
+import re
+import time
+import uuid
+from typing import Any
 
-from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_groq import ChatGroq
 from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI
 
 from app.core.config import get_settings
 from app.core.database import get_session
+from app.graph.state import AQGState
 from app.models.db_models import Chunk, Question, ValidationLog
 from app.services.chat.state_manager import ChatStateManager
+from app.services.generation.schemas import (
+    CognitivePlan,
+    ContentAnalysis,
+    QuestionBlueprint,
+)
+from app.services.generation.stage_runners import (
+    run_llm_judge,
+    run_refinement_a,
+    run_refinement_b,
+    run_stage1_context_understanding,
+    run_stage2_cognitive_planning,
+    run_stage3_question_blueprint,
+    run_stage4_question_generation,
+)
 from app.services.retrieval.dense_index import DenseIndex
-from app.services.retrieval.sparse_index import SparseIndex
 from app.services.retrieval.hybrid_search import HybridSearch
-from app.graph.state import AQGState
+from app.services.retrieval.sparse_index import SparseIndex
+from app.services.validation.grounding_checker import compute_grounding_evidence_score
 
 logger = logging.getLogger(__name__)
 
@@ -40,70 +54,9 @@ REFLECTIVE_PATTERNS = [
     r"apa yang ingin kamu ketahui",
 ]
 
-# System prompt for Question Generation
-SYSTEM_PROMPT = """Anda adalah pembuat soal esai dan isian singkat berbahasa Indonesia yang ahli dalam kurikulum Sekolah Dasar (SD/MI) kelas 1 sampai 6, untuk siswa berusia 6–12 tahun.
-Tugas Anda adalah membuat soal yang SEDERHANA, JELAS, SPESIFIK, KONKRET, dan LANGSUNG BERDASARKAN FAKTA/TEORI/KONSEP dari materi buku.
-
-ATURAN WAJIB:
-1. BAHASA HARUS MUDAH DIPAHAMI SISWA SD (usia 6-12 tahun):
-   - Gunakan kata-kata pendek dan umum. Hindari kata abstrak seperti "penting", "capai", "memodifikasi", "menerapkan strategi".
-   - Contoh BAIK  : "Apa nama gerakan melempar bola ke teman?"
-   - Contoh BURUK : "Apa yang dapat kamu capai setelah mempelajari bab ini?"
-
-2. DILARANG KERAS membuat soal REFLEKTIF / META-LEARNING. Soal jenis ini HARUS DITOLAK:
-   - Pola terlarang: "Apa yang sudah kamu pelajari...", "Apa yang dapat kamu lakukan setelah...",
-     "Apa yang dapat kamu capai...", "Apa yang perlu kamu lakukan untuk...",
-     "Apa tujuan pembelajaran...", "Sebutkan tujuan dari bab ini...",
-     "Apa yang telah kamu pelajari...", "Apa manfaat mempelajari bab ini?"
-   - FOKUS HANYA PADA: fakta, nama gerakan, definisi istilah, cara melakukan gerakan,
-     fungsi anggota tubuh, aturan permainan, jumlah pemain, nama alat olahraga.
-
-3. SETIAP SOAL HARUS UNIK — tanyakan ASPEK YANG BERBEDA dari materi.
-   Jangan buat dua soal yang menanyakan hal yang sama meskipun kalimatnya berbeda.
-
-4. HANYA buat soal berjenis "esai" atau "isian_singkat".
-
-5. Kunci jawaban harus KONKRET dan langsung dari teks materi, bukan parafrase abstrak.
-   - Contoh BAIK  : "Posisi kaki selebar bahu, lutut sedikit ditekuk, bola dipegang setinggi dada"
-
-6. JANGAN sertakan pemikiran, penalaran, atau tag <think>. LANGSUNG dan HANYA keluarkan format array JSON murni persis seperti berikut:
-[
-  {
-    "question": "teks pertanyaan sederhana dan spesifik materi SD",
-    "question_type": "esai",
-    "answer": "jawaban yang benar dan presisi dari materi",
-    "explanation": "penjelasan singkat berdasarkan materi buku",
-    "source_reference": "referensi topik/bab materi",
-    "bloom_level": "C1-Mengingat"
-  }
-]
-"""
-
-# System prompt for LLM Judge
-JUDGE_SYSTEM_PROMPT = """Anda adalah evaluator soal (LLM-as-Judge) untuk soal esai dan isian singkat tingkat Sekolah Dasar (SD/MI) usia 6-12 tahun.
-
-ATURAN KERAS — langsung beri verdict "fail" jika soal melanggar salah satu dari ini:
-A. SOAL REFLEKTIF / META-LEARNING — fail jika menanyakan proses belajar atau tujuan pembelajaran.
-B. JAWABAN TERLALU ABSTRAK — fail jika jawaban berupa parafrase umum tanpa fakta konkret dari materi buku.
-C. BAHASA TERLALU SULIT UNTUK SD — fail jika menggunakan kata abstrak yang tidak dipahami anak usia 6-12 tahun.
-
-RUBRIK PENILAIAN (jika tidak melanggar aturan keras):
-1. Apakah soal menguji ISI MATERI konkret dari buku?
-2. Apakah kunci jawaban KONKRET dan langsung didukung teks materi?
-3. Apakah tingkat taksonomi Bloom sesuai dengan kedalaman pertanyaan?
-4. Apakah bahasa soal mudah dipahami siswa SD usia 6-12 tahun?
-
-JANGAN sertakan pemikiran atau tag <think>. LANGSUNG dan HANYA keluarkan format JSON murni persis seperti berikut:
-{
-  "verdict": "pass",
-  "score": 0.95,
-  "feedback": "penjelasan evaluasi"
-}
-"""
-
 # ── Global Service Singletons ──
-_dense_index: Optional[DenseIndex] = None
-_sparse_cache: Dict[str, SparseIndex] = {}
+_dense_index: DenseIndex | None = None
+_sparse_cache: dict[str, SparseIndex] = {}
 
 
 def get_shared_dense_index() -> DenseIndex:
@@ -120,11 +73,38 @@ def get_shared_dense_index() -> DenseIndex:
 
 
 def get_chat_model(is_judge: bool = False):
-    """Instantiate LangChain ChatModel (Groq or Ollama) with hidden reasoning."""
+    """Instantiate LangChain ChatModel (OpenRouter / OpenAI / Groq / Ollama)."""
     settings = get_settings()
     model_name = settings.LLM_JUDGE_MODEL if is_judge else settings.LLM_GENERATOR_MODEL
 
-    if settings.LLM_PROVIDER == "groq" and settings.GROQ_API_KEY:
+    if settings.LLM_PROVIDER in ("openrouter", "openai") or settings.OPENROUTER_API_KEY:
+        api_key = settings.OPENROUTER_API_KEY or settings.GROQ_API_KEY
+        base_url = settings.OPENROUTER_BASE_URL or "https://openrouter.ai/api/v1"
+
+        extra_body: dict[str, Any] = {}
+        if ":free" in model_name or "openrouter" in str(base_url).lower():
+            # OpenRouter Automatic Fallback Routing (max 3 models) to prevent 429 rate limit errors
+            fallback_alt = "google/gemma-4-26b-a4b-it:free" if model_name != "google/gemma-4-26b-a4b-it:free" else "google/gemma-4-31b-it:free"
+            extra_body["models"] = [
+                model_name,
+                fallback_alt,
+                "openrouter/free",
+            ]
+
+        return ChatOpenAI(
+            model=model_name,
+            api_key=api_key,
+            base_url=base_url,
+            temperature=0.3,
+            max_retries=5,
+            default_headers={
+                "HTTP-Referer": "http://localhost:3000",
+                "X-Title": "RAG-AQG",
+            },
+            extra_body=extra_body if extra_body else None,
+        )
+    elif settings.LLM_PROVIDER == "groq" and settings.GROQ_API_KEY:
+
         groq_model = model_name
         if ":" in model_name or "qwen" in model_name.lower():
             groq_model = "qwen-qwq-32b" if "qwq" in model_name.lower() else "qwen/qwen3.6-27b"
@@ -143,9 +123,10 @@ def get_chat_model(is_judge: bool = False):
         )
 
 
-# ── Text Cleaning & Parsing Helpers ──
 
-def extract_chapter_number(chapter_str: Optional[str]) -> Optional[str]:
+# ── Text Cleaning & Filtering Helpers ──
+
+def extract_chapter_number(chapter_str: str | None) -> str | None:
     """Extract chapter number or roman numeral into normalized integer string."""
     if not chapter_str:
         return None
@@ -180,7 +161,7 @@ def is_reflective_question(question_text: str) -> bool:
     return any(re.search(pattern, text_lower) for pattern in REFLECTIVE_PATTERNS)
 
 
-def deduplicate_questions(questions: List[Dict[str, Any]], threshold: float = 0.70) -> List[Dict[str, Any]]:
+def deduplicate_questions(questions: list[dict[str, Any]], threshold: float = 0.70) -> list[dict[str, Any]]:
     """Deduplicate questions using Jaccard token overlap."""
     def tokenize(t: str) -> set:
         return set(re.findall(r'\w+', t.lower()))
@@ -189,7 +170,7 @@ def deduplicate_questions(questions: List[Dict[str, Any]], threshold: float = 0.
         union = a | b
         return len(a & b) / len(union) if union else 0.0
 
-    unique: List[Dict[str, Any]] = []
+    unique: list[dict[str, Any]] = []
     for cand in questions:
         c_tokens = tokenize(cand.get("question", ""))
         if not any(jaccard(c_tokens, tokenize(e.get("question", ""))) >= threshold for e in unique):
@@ -198,147 +179,9 @@ def deduplicate_questions(questions: List[Dict[str, Any]], threshold: float = 0.
     return unique
 
 
-def compute_grounding_score(question_text: str, answer_text: str, source_chunks: List[str], dense_idx: DenseIndex) -> float:
-    """Compute cosine similarity between Question+Answer and context source chunks."""
-    if not source_chunks:
-        return 0.0
+# ── LangGraph Nodes ──
 
-    qa_text = f"{question_text} Jawaban: {answer_text}".strip()
-    model = dense_idx.model
-
-    qa_emb = model.encode([qa_text], normalize_embeddings=True)[0]
-    chunk_embs = model.encode(source_chunks, normalize_embeddings=True)
-
-    scores = [float(np.dot(qa_emb, ch_emb)) for ch_emb in chunk_embs]
-    scores.sort(reverse=True)
-
-    max_score = scores[0] if scores else 0.0
-    top2_mean = float(np.mean(scores[:2])) if len(scores) >= 2 else max_score
-
-    return float(0.8 * max_score + 0.2 * top2_mean)
-
-
-def strip_reasoning_tags(text: str) -> str:
-    """Strip <think>...</think> and unclosed reasoning tags."""
-    if not text:
-        return ""
-    cleaned = re.sub(r'<(think|thought)>[\s\S]*?</\1>', '', text, flags=re.IGNORECASE)
-    cleaned = re.sub(r'<(think|thought)>[\s\S]*$', '', cleaned, flags=re.IGNORECASE)
-    return cleaned.strip()
-
-
-def clean_json_string(s: str) -> str:
-    """Clean trailing commas before brackets/braces."""
-    if not s:
-        return ""
-    return re.sub(r',\s*([\]}])', r'\1', s).strip()
-
-
-def parse_questions_from_response(response_text: str) -> List[Dict[str, Any]]:
-    """Robust 4-stage JSON parser for question candidate lists."""
-    if not response_text:
-        return []
-
-    cleaned = strip_reasoning_tags(response_text)
-    text_to_search = cleaned if cleaned else response_text
-
-    # Stage 1: Markdown code blocks
-    code_blocks = re.findall(r'```(?:json)?\s*([\s\S]*?)\s*```', text_to_search, re.IGNORECASE)
-    for block in code_blocks:
-        b_clean = clean_json_string(block.strip())
-        try:
-            res = json.loads(b_clean, strict=False)
-            if isinstance(res, list):
-                return [q for q in res if isinstance(q, dict) and q.get("question")]
-            elif isinstance(res, dict) and res.get("question"):
-                return [res]
-        except Exception:
-            pass
-
-    # Stage 2: Outer bracket search [...]
-    first_b = text_to_search.find('[')
-    last_b = text_to_search.rfind(']')
-    if first_b != -1 and last_b != -1 and last_b > first_b:
-        sub = clean_json_string(text_to_search[first_b:last_b + 1])
-        try:
-            res = json.loads(sub, strict=False)
-            if isinstance(res, list):
-                return [q for q in res if isinstance(q, dict) and q.get("question")]
-        except Exception:
-            pass
-
-    # Stage 3: Outer brace search {...}
-    first_brace = text_to_search.find('{')
-    last_brace = text_to_search.rfind('}')
-    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
-        sub = clean_json_string(text_to_search[first_brace:last_brace + 1])
-        try:
-            res = json.loads(sub, strict=False)
-            if isinstance(res, dict):
-                if "questions" in res and isinstance(res["questions"], list):
-                    return [q for q in res["questions"] if isinstance(q, dict) and q.get("question")]
-                if res.get("question"):
-                    return [res]
-        except Exception:
-            pass
-
-    # Stage 4: Regex object extraction fallback
-    recovered = []
-    pattern = r'\{[^{}]*?"question"\s*:\s*[\s\S]*?\}'
-    for m in re.finditer(pattern, text_to_search):
-        try:
-            obj = json.loads(clean_json_string(m.group(0)), strict=False)
-            if isinstance(obj, dict) and obj.get("question"):
-                recovered.append(obj)
-        except Exception:
-            pass
-
-    return recovered
-
-
-def parse_judge_from_response(response_text: str) -> Dict[str, Any]:
-    """Parse LLM Judge evaluation response into verdict, score, feedback."""
-    default_res = {"verdict": "pass", "score": 0.85, "feedback": "Evaluasi otomatis lolos."}
-    if not response_text:
-        return default_res
-
-    cleaned = strip_reasoning_tags(response_text)
-    text_to_search = cleaned if cleaned else response_text
-
-    # Try code blocks first
-    code_blocks = re.findall(r'```(?:json)?\s*([\s\S]*?)\s*```', text_to_search, re.IGNORECASE)
-    candidate_strs = code_blocks if code_blocks else []
-
-    first_brace = text_to_search.find('{')
-    last_brace = text_to_search.rfind('}')
-    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
-        candidate_strs.append(text_to_search[first_brace:last_brace + 1])
-
-    for c in candidate_strs:
-        try:
-            res = json.loads(clean_json_string(c), strict=False)
-            if isinstance(res, dict) and "verdict" in res:
-                return {
-                    "verdict": str(res.get("verdict", "fail")).lower().strip(),
-                    "score": float(res.get("score", 0.8)),
-                    "feedback": str(res.get("feedback", "No feedback")),
-                }
-        except Exception:
-            pass
-
-    # Heuristic fallback if JSON missing
-    lower = text_to_search.lower()
-    if "pass" in lower and "fail" not in lower:
-        return {"verdict": "pass", "score": 0.9, "feedback": "Lolos evaluasi juri."}
-    elif "fail" in lower:
-        return {"verdict": "fail", "score": 0.4, "feedback": "Soal perlu diperbaiki agar lebih konkret."}
-
-    return default_res
-
-
-# ── LangGraph Node Functions ──
-
-def retrieve_context(state: AQGState) -> Dict[str, Any]:
+def retrieve_context(state: AQGState) -> dict[str, Any]:
     """Node 1: Retrieve relevant context chunks using Hybrid Search and anti-exercise filter."""
     logger.info("[LangGraph Node 1] retrieve_context started for session_id='%s'", state["session_id"])
     settings = get_settings()
@@ -422,81 +265,152 @@ def retrieve_context(state: AQGState) -> Dict[str, Any]:
     }
 
 
-def generate_questions(state: AQGState) -> Dict[str, Any]:
-    """Node 2: Generate candidate questions from context using ChatModel and robust 4-stage parser."""
-    logger.info("[LangGraph Node 2] generate_questions started")
+def generate_questions(state: AQGState) -> dict[str, Any]:
+    """
+    Node 2: Multi-Stage Question Generation.
+    Stage 1 (Context Understanding) & Stage 2 (Cognitive Planning) run 1x for the material/session.
+    Stage 3 (Question Blueprint) & Stage 4 (Question Package) run Nx per question item.
+    """
+    logger.info("[LangGraph Node 2] Multi-Stage generate_questions started")
     retrieved = state.get("retrieved_chunks", [])
     if not retrieved:
         return {"raw_questions": [], "current_question": {}, "error": "Tidak ada konteks materi untuk pembuatan soal."}
 
-    context_texts = [c["text"] for c in retrieved]
-    context_str = "\n\n".join(context_texts)
     num_questions = state.get("num_questions", 5)
-    over_gen_count = num_questions + 2
-    chapter = state.get("chapter")
-    bloom_level = state.get("bloom_level")
-    chat_history = state.get("chat_history", "")
+    bloom_level_raw = state.get("bloom_level") or "C2-Memahami"
+    # Ensure SD Bloom range C1-C4
+    bloom_level = bloom_level_raw if any(b in bloom_level_raw for b in ["C1", "C2", "C3", "C4"]) else "C2-Memahami"
 
-    user_msg_content = f"Konteks materi:\n{context_str}\n\n"
-    if chat_history:
-        user_msg_content += f"Konteks percakapan:\n{chat_history}\n\n"
-
-    user_msg_content += (
-        f"Buatlah TEPAT {over_gen_count} soal esai atau isian singkat yang MASING-MASING MENANYAKAN ASPEK BERBEDA "
-        f"tentang ISI MATERI dari konteks buku di atas untuk siswa SD (usia 6-12 tahun). "
-        f"Pastikan kunci jawaban konkret dan bahasa mudah dipahami."
-    )
-    if chapter:
-        user_msg_content += f" Fokus pada bab/topik: {chapter}."
-    if bloom_level:
-        user_msg_content += f" Gunakan tingkat kognitif Bloom: {bloom_level}."
-
+    settings = get_settings()
     chat_model = get_chat_model(is_judge=False)
-    questions_data: List[Dict[str, Any]] = []
+    is_openrouter = settings.LLM_PROVIDER in ("openrouter", "openai")
 
-    try:
-        resp = chat_model.invoke([
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=user_msg_content)
-        ])
-        raw_content = resp.content if isinstance(resp.content, str) else str(resp.content)
-        questions_data = parse_questions_from_response(raw_content)
-    except Exception as e:
-        logger.error("[Node 2] ChatModel invocation failed: %s", e)
+    # ── Level Sesi/Materi: Gabungkan konteks untuk analisis komprehensif ──
+    combined_context = "\n\n---\n\n".join(chk.get("text", "") for chk in retrieved[:5])
 
-    if not questions_data:
-        logger.error("[Node 2] Failed to parse questions from model response.")
-        return {"raw_questions": [], "current_question": {}, "error": "Gagal menghasilkan soal dari model LLM."}
+    # ── Stage 1: Context Understanding (DIJALANKAN 1 KALI untuk topik materi) ──
+    logger.info("[Multi-Stage Gen] Running Stage 1: Context Understanding (1x across retrieved context)...")
+    c_analysis, t1 = run_stage1_context_understanding(chat_model, combined_context, attempt=1)
+    if is_openrouter:
+        time.sleep(0.4)
 
-    # Deduplicate & truncate
-    deduped = deduplicate_questions(questions_data, threshold=0.70)
+    # ── Stage 2: Cognitive Bloom Planning (DIJALANKAN 1 KALI untuk target Bloom level) ──
+    logger.info("[Multi-Stage Gen] Running Stage 2: Cognitive Bloom Planning (1x for target level %s)...", bloom_level)
+    cog_plan, t2 = run_stage2_cognitive_planning(chat_model, c_analysis, bloom_level, attempt=1)
+    if is_openrouter:
+        time.sleep(0.4)
+
+    # ── Level Butir Soal: Looping Stage 3 (Blueprint) & Stage 4 (Question Package) per butir soal ──
+    candidates: list[dict[str, Any]] = []
+
+    # Ambil daftar poin materi yang bisa diuji dari hasil Stage 1
+    testable_points = [tc.point for tc in c_analysis.testable_content if tc.point]
+    if not testable_points and c_analysis.key_facts:
+        testable_points = c_analysis.key_facts
+    if not testable_points:
+        testable_points = [c_analysis.topic or "Materi Pokok"]
+
+    # Target total kandidat (tambahkan buffer sedikit untuk deduplikasi)
+    target_count = num_questions + (1 if num_questions <= 3 else 2)
+
+    for q_idx in range(target_count):
+        chk = retrieved[q_idx % len(retrieved)]
+        chunk_text = chk.get("text", "")
+        chunk_meta = chk.get("metadata", {})
+        chap = chunk_meta.get("chapter", "")
+        sec = chunk_meta.get("section_heading", "")
+        src_ref = f"{chap} - {sec}".strip(" -") or "Materi Buku"
+
+        focus_point = testable_points[q_idx % len(testable_points)]
+        logger.info("[Multi-Stage Gen] Generating Question %d/%d (Focus: '%s')...", q_idx + 1, target_count, focus_point[:40])
+
+        step_traces = [t1.model_dump(), t2.model_dump()]
+
+        # ── Stage 3: Question Blueprint (DIJALANKAN per Butir Soal) ──
+        q_blueprint, t3 = run_stage3_question_blueprint(
+            chat_model=chat_model,
+            content_analysis=c_analysis,
+            cognitive_plan=cog_plan,
+            focus_knowledge_point=focus_point,
+            attempt=1
+        )
+        step_traces.append(t3.model_dump())
+        if is_openrouter:
+            time.sleep(0.4)
+
+        # ── Stage 4: Question Generation (DIJALANKAN per Butir Soal) ──
+        gen_context = chunk_text if q_blueprint.grounding_evidence and q_blueprint.grounding_evidence in chunk_text else combined_context
+        q_pkg, t4 = run_stage4_question_generation(
+            chat_model=chat_model,
+            retrieved_context=gen_context,
+            blueprint=q_blueprint,
+            target_bloom_level=bloom_level,
+            question_type=q_blueprint.question_type or "esai",
+            attempt=1
+        )
+        step_traces.append(t4.model_dump())
+        if is_openrouter:
+            time.sleep(0.5)
+
+        candidate_obj = {
+            "question": q_pkg.question,
+            "question_type": q_pkg.question_type,
+            "answer": q_pkg.expected_answer,
+            "explanation": f"Berdasarkan analisis materi '{c_analysis.topic}'. Poin uji: {q_blueprint.knowledge_point}.",
+            "source_reference": src_ref,
+            "bloom_level": q_pkg.cognitive_level or bloom_level,
+            "knowledge_point": q_pkg.knowledge_point or q_blueprint.knowledge_point,
+            "grounding_evidence": q_pkg.grounding_evidence or q_blueprint.grounding_evidence,
+            "answer_elements": [e.model_dump() for e in q_pkg.answer_elements],
+            "rubric": [r.model_dump() for r in q_pkg.rubric],
+            "content_analysis": c_analysis.model_dump(),
+            "cognitive_plan": cog_plan.model_dump(),
+            "question_blueprint": q_blueprint.model_dump(),
+            "stage_traces": step_traces,
+            "chunk_id": chk.get("id"),
+        }
+        candidates.append(candidate_obj)
+
+    # Deduplicate candidate questions
+    deduped = deduplicate_questions(candidates, threshold=0.70)
     final_raw = deduped[:num_questions]
-    logger.info("[Node 2] Generated %d deduplicated raw questions.", len(final_raw))
+    logger.info("[Node 2] Generated %d deduplicated multi-stage question packages.", len(final_raw))
 
     first_q = final_raw[0] if final_raw else {}
+    first_traces = first_q.get("stage_traces", [])
+
     return {
         "raw_questions": final_raw,
         "current_q_index": 0,
         "current_question": first_q,
+        "content_analysis": c_analysis.model_dump(),
+        "cognitive_plan": cog_plan.model_dump(),
+        "question_blueprint": first_q.get("question_blueprint", {}),
+        "stage_traces": first_traces,
         "current_attempt": 1,
         "max_attempts": get_settings().MAX_REFINEMENT_ATTEMPTS,
+        "failed_stage": "none",
+        "validation_logs": [],
     }
 
 
-def grounding_validation(state: AQGState) -> Dict[str, Any]:
-    """Node 3 (Layer 1): Validate grounding score via cosine similarity embeddings."""
+def grounding_validation(state: AQGState) -> dict[str, Any]:
+    """
+    Node 3 (Layer 1): Validate grounding score via non-LLM cosine similarity embeddings
+    against grounding_evidence from blueprint (with fallback to source chunks).
+    """
     settings = get_settings()
     dense_idx = get_shared_dense_index()
     q = state.get("current_question", {})
     if not q or not q.get("question"):
-        logger.warning("[Node 3] Empty question received, skipping to exhausted persist.")
+        logger.warning("[Node 3] Empty question received.")
         return {
             "validation_logs": [{
                 "attempt_number": state.get("current_attempt", 1),
                 "layer": "grounding",
-                "verdict": "fail",
                 "score_or_verdict": "fail (empty_question)",
                 "feedback": "Soal kosong.",
+                "aspect_evaluations": None,
                 "auto_pass": False,
             }]
         }
@@ -507,7 +421,8 @@ def grounding_validation(state: AQGState) -> Dict[str, Any]:
 
     q_text = q.get("question", "")
     ans_text = q.get("answer", "")
-    logger.info("[LangGraph Node 3] grounding_validation for attempt %d: '%s'", attempt, q_text[:60])
+    grounding_evidence = q.get("grounding_evidence", "")
+    logger.info("[LangGraph Node 3] grounding_validation (attempt %d) for: '%s'", attempt, q_text[:60])
 
     # Pre-check: Reject reflective questions immediately
     if is_reflective_question(q_text):
@@ -515,14 +430,22 @@ def grounding_validation(state: AQGState) -> Dict[str, Any]:
         log_entry = {
             "attempt_number": attempt,
             "layer": "pre_check",
-            "verdict": "fail",
             "score_or_verdict": "fail (reflective_pattern)",
-            "feedback": "Soal bersifat reflektif / meta-learning. Ganti dengan soal fakta/teori/konsep konkret dari buku.",
+            "feedback": "Soal bersifat reflektif / meta-learning. Ganti dengan fakta/teori/konsep konkret dari buku.",
+            "aspect_evaluations": None,
             "auto_pass": False,
+            "verdict": "fail",
         }
-        return {"validation_logs": [log_entry]}
+        return {"validation_logs": [log_entry], "failed_stage": "generation"}
 
-    g_score = compute_grounding_score(q_text, ans_text, source_texts, dense_idx)
+    grounding_res = compute_grounding_evidence_score(
+        question_text=q_text,
+        answer_text=ans_text,
+        grounding_evidence=grounding_evidence,
+        fallback_chunks=source_texts,
+        dense_idx=dense_idx
+    )
+    g_score = grounding_res["score"]
     auto_pass_thr = settings.GROUNDING_AUTO_PASS_THRESHOLD
     grounding_thr = settings.GROUNDING_THRESHOLD
 
@@ -533,126 +456,209 @@ def grounding_validation(state: AQGState) -> Dict[str, Any]:
         log_entry = {
             "attempt_number": attempt,
             "layer": "grounding",
-            "verdict": "auto_pass",
             "score_or_verdict": f"auto-pass (score={g_score:.3f})",
-            "feedback": "Auto-passed: grounding score tinggi melebihi threshold, Judge dilewati.",
+            "feedback": f"Auto-pass: similarity score tinggi ({g_score:.3f}) terhadap grounding evidence.",
+            "aspect_evaluations": json.dumps({"grounding_similarity": g_score, "target": grounding_res["target"]}, ensure_ascii=False),
             "auto_pass": True,
+            "verdict": "auto_pass",
         }
-        return {"current_question": q, "validation_logs": [log_entry]}
+        return {"current_question": q, "validation_logs": [log_entry], "failed_stage": "none"}
 
     is_grounded = g_score >= grounding_thr
     verdict = "pass" if is_grounded else "fail"
-    feedback = "Grounded." if is_grounded else f"Grounding score ({g_score:.3f}) di bawah threshold ({grounding_thr:.2f})."
+    feedback = "Grounded sesuai bukti materi." if is_grounded else f"Grounding score ({g_score:.3f}) di bawah threshold ({grounding_thr:.2f})."
 
     log_entry = {
         "attempt_number": attempt,
         "layer": "grounding",
-        "verdict": verdict,
         "score_or_verdict": f"{verdict} (score={g_score:.3f})",
         "feedback": feedback,
+        "aspect_evaluations": json.dumps({"grounding_similarity": g_score, "target": grounding_res["target"]}, ensure_ascii=False),
         "auto_pass": False,
+        "verdict": verdict,
     }
-    return {"current_question": q, "validation_logs": [log_entry]}
+    return {
+        "current_question": q,
+        "validation_logs": [log_entry],
+        "failed_stage": "generation" if not is_grounded else "none"
+    }
 
 
-def llm_judge_evaluation(state: AQGState) -> Dict[str, Any]:
-    """Node 4 (Layer 2): Evaluate question using LLM-as-Judge against elementary school rubrics."""
+def llm_judge_evaluation(state: AQGState) -> dict[str, Any]:
+    """
+    Node 4 (Layer 2): Evaluate question using LLM-as-Judge across 6 dimensions:
+    grounding, bloom_adherence, bahasa, answerability, answer_alignment, rubric_alignment.
+    """
     logger.info("[LangGraph Node 4] llm_judge_evaluation started")
-    time.sleep(0.8)  # Throttle to avoid rate limits
+    time.sleep(0.5)  # Slight throttle
 
     q = state.get("current_question", {})
     attempt = state.get("current_attempt", 1)
     retrieved = state.get("retrieved_chunks", [])
     source_texts = [c["text"] for c in retrieved]
-    context_str = "\n".join(source_texts)[:1500]
+    context_str = "\n".join(source_texts)[:2000]
 
     judge_model = get_chat_model(is_judge=True)
-    prompt = (
-        f"Konteks Materi (ringkas):\n{context_str}\n\n"
-        f"Soal yang Dievaluasi:\n{json.dumps(q, ensure_ascii=False, indent=2)}\n\n"
-        f"Lakukan evaluasi rubrik soal SD:"
+    target_bloom = q.get("bloom_level") or state.get("bloom_level") or "C2-Memahami"
+
+    judge_eval, judge_trace = run_llm_judge(
+        judge_model=judge_model,
+        retrieved_context=context_str,
+        grounding_evidence=q.get("grounding_evidence", ""),
+        question=q.get("question", ""),
+        expected_answer=q.get("answer", ""),
+        rubric=q.get("rubric", []),
+        target_bloom_level=target_bloom,
+        attempt=attempt
     )
 
-    try:
-        resp = judge_model.invoke([
-            SystemMessage(content=JUDGE_SYSTEM_PROMPT),
-            HumanMessage(content=prompt)
-        ])
-        raw_content = resp.content if isinstance(resp.content, str) else str(resp.content)
-        eval_dict = parse_judge_from_response(raw_content)
-    except Exception as e:
-        logger.error("[Node 4] LLM Judge invocation failed: %s", e)
-        eval_dict = {"verdict": "pass", "score": 0.85, "feedback": "Evaluasi otomatis lolos."}
+    verdict = judge_eval.overall.lower().strip()
+    failed_stage = judge_eval.failed_stage.lower().strip() if verdict != "pass" else "none"
 
-    verdict = eval_dict.get("verdict", "pass")
-    score = eval_dict.get("score", 0.85)
-    feedback = eval_dict.get("feedback", "Lolos evaluasi.")
-
-    logger.info("[Node 4] LLM Judge verdict: '%s' (score=%.2f)", verdict, score)
+    logger.info("[Node 4] LLM Judge overall='%s', failed_stage='%s'", verdict, failed_stage)
 
     if verdict == "pass":
         q["status"] = "final"
         q["refinement_count"] = attempt - 1
 
+    feedback_parts = []
+    for aspect_name in ["grounding", "bloom_adherence", "bahasa", "answerability", "answer_alignment", "rubric_alignment"]:
+        asp: Any = getattr(judge_eval, aspect_name, None)
+        if asp and getattr(asp, "status", "") == "fail":
+            feedback_parts.append(f"[{aspect_name.upper()}] {asp.feedback}")
+
+    full_feedback = " ; ".join(feedback_parts) if feedback_parts else "Semua aspek rubrik juri lolos."
+
     log_entry = {
         "attempt_number": attempt,
         "layer": "judge",
-        "verdict": verdict,
-        "score_or_verdict": f"{verdict} (score={score:.2f})",
-        "feedback": feedback,
+        "score_or_verdict": f"{verdict} (failed_stage={failed_stage})",
+        "feedback": full_feedback,
+        "aspect_evaluations": json.dumps(judge_eval.model_dump(), ensure_ascii=False),
         "auto_pass": False,
+        "verdict": verdict,
     }
-    return {"current_question": q, "validation_logs": [log_entry]}
+
+    # Append trace
+    curr_traces = list(state.get("stage_traces", []))
+    curr_traces.append(judge_trace.model_dump())
+    q["stage_traces"] = curr_traces
+
+    return {
+        "current_question": q,
+        "validation_logs": [log_entry],
+        "failed_stage": failed_stage,
+        "judge_evaluation": judge_eval.model_dump(),
+        "stage_traces": curr_traces,
+    }
 
 
-def self_refinement(state: AQGState) -> Dict[str, Any]:
-    """Node 5: Refine or regenerate question based on feedback from validation layers."""
+def self_refinement(state: AQGState) -> dict[str, Any]:
+    """
+    Node 5: Smart Self-Refinement Router:
+    - If failed_stage == "planning" -> Refinement Prompt B (re-plans Bloom & Blueprint) -> re-generates.
+    - If failed_stage == "generation" (default) -> Refinement Prompt A (repairs wording/grounding/rubric).
+    """
     attempt = state.get("current_attempt", 1) + 1
     max_attempts = state.get("max_attempts", 3)
     q = state.get("current_question", {})
     logs = state.get("validation_logs", [])
-    last_feedback = logs[-1].get("feedback", "Perbaiki agar sesuai materi.") if logs else "Perbaiki soal."
+    last_feedback = logs[-1].get("feedback", "Perbaiki soal agar lebih konkret.") if logs else "Perbaiki soal."
+    failed_stage = state.get("failed_stage", "generation")
 
-    logger.info("[LangGraph Node 5] self_refinement to attempt %d/%d with feedback: %s",
-                attempt, max_attempts, last_feedback[:100])
+    logger.info("[LangGraph Node 5] self_refinement attempt %d/%d (failed_stage='%s')",
+                attempt, max_attempts, failed_stage)
 
     if attempt > max_attempts:
-        logger.warning("[Node 5] Max attempts reached for question. Marking as 'needs_review'.")
+        logger.warning("[Node 5] Max attempts reached. Marking question as 'needs_review'.")
         q["status"] = "needs_review"
         q["refinement_count"] = max_attempts
         return {"current_question": q, "current_attempt": attempt}
 
-    time.sleep(0.8)
-    retrieved = state.get("retrieved_chunks", [])
-    context_str = "\n".join([c["text"] for c in retrieved])
-
-    regen_prompt = (
-        f"Konteks materi:\n{context_str}\n\n"
-        f"Soal sebelumnya:\n{json.dumps(q, ensure_ascii=False)}\n\n"
-        f"Evaluasi & Kritik: {last_feedback}\n\n"
-        f"Perbaiki dan buat ulang soal ini menjadi soal yang konkret, spesifik, dan mudah dipahami siswa SD."
-    )
-
+    time.sleep(0.5)
     chat_model = get_chat_model(is_judge=False)
-    new_q = q
+    retrieved = state.get("retrieved_chunks", [])
+    context_str = "\n".join([c["text"] for c in retrieved])[:2500]
 
-    try:
-        resp = chat_model.invoke([
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=regen_prompt)
-        ])
-        raw_content = resp.content if isinstance(resp.content, str) else str(resp.content)
-        parsed = parse_questions_from_response(raw_content)
-        if parsed and parsed[0].get("question"):
-            new_q = parsed[0]
-    except Exception as e:
-        logger.error("[Node 5] Regeneration failed: %s", e)
+    curr_traces = list(state.get("stage_traces", []))
+    target_bloom = q.get("bloom_level") or state.get("bloom_level") or "C2-Memahami"
 
-    return {"current_question": new_q, "current_attempt": attempt}
+    c_analysis = ContentAnalysis.model_validate(q.get("content_analysis", state.get("content_analysis", {})))
+    cog_plan = CognitivePlan.model_validate(q.get("cognitive_plan", state.get("cognitive_plan", {})))
+    q_blueprint = QuestionBlueprint.model_validate(q.get("question_blueprint", state.get("question_blueprint", {})))
+
+    if failed_stage == "planning":
+        logger.info("[Node 5] Executing Refinement Prompt B (Planning level redesign)...")
+        judge_eval_data = state.get("judge_evaluation", {})
+        detected_level = judge_eval_data.get("bloom_adherence", {}).get("detected_level", "Mismatch")
+
+        new_plan, t_ref_b = run_refinement_b(
+            chat_model=chat_model,
+            prev_plan=cog_plan,
+            question_text=q.get("question", ""),
+            validation_feedback=last_feedback,
+            detected_level=detected_level,
+            target_bloom_level=target_bloom,
+            content_analysis=c_analysis,
+            attempt=attempt
+        )
+        curr_traces.append(t_ref_b.model_dump())
+
+        # Re-run Stage 3 Blueprint with new cognitive plan
+        new_blueprint, t_bp = run_stage3_question_blueprint(chat_model, c_analysis, new_plan, attempt=attempt)
+        curr_traces.append(t_bp.model_dump())
+
+        # Re-run Stage 4 Generation
+        new_pkg, t_gen = run_stage4_question_generation(
+            chat_model=chat_model,
+            retrieved_context=context_str,
+            blueprint=new_blueprint,
+            target_bloom_level=target_bloom,
+            question_type=new_blueprint.question_type or "esai",
+            attempt=attempt
+        )
+        curr_traces.append(t_gen.model_dump())
+
+        q["question"] = new_pkg.question
+        q["answer"] = new_pkg.expected_answer
+        q["answer_elements"] = [e.model_dump() for e in new_pkg.answer_elements]
+        q["rubric"] = [r.model_dump() for r in new_pkg.rubric]
+        q["grounding_evidence"] = new_pkg.grounding_evidence or new_blueprint.grounding_evidence
+        q["cognitive_plan"] = new_plan.model_dump()
+        q["question_blueprint"] = new_blueprint.model_dump()
+
+    else:
+        logger.info("[Node 5] Executing Refinement Prompt A (Generation level repair)...")
+        new_pkg, t_ref_a = run_refinement_a(
+            chat_model=chat_model,
+            question=q.get("question", ""),
+            expected_answer=q.get("answer", ""),
+            rubric=q.get("rubric", []),
+            blueprint=q_blueprint,
+            retrieved_context=context_str,
+            validation_feedback=last_feedback,
+            target_bloom_level=target_bloom,
+            question_type=q.get("question_type", "esai"),
+            attempt=attempt
+        )
+        curr_traces.append(t_ref_a.model_dump())
+
+        q["question"] = new_pkg.question
+        q["answer"] = new_pkg.expected_answer
+        q["answer_elements"] = [e.model_dump() for e in new_pkg.answer_elements]
+        q["rubric"] = [r.model_dump() for r in new_pkg.rubric]
+        q["grounding_evidence"] = new_pkg.grounding_evidence or q_blueprint.grounding_evidence
+
+    q["stage_traces"] = curr_traces
+    return {
+        "current_question": q,
+        "current_attempt": attempt,
+        "stage_traces": curr_traces,
+    }
 
 
-def persist_questions(state: AQGState) -> Dict[str, Any]:
-    """Node 6: Save validated/finalized question and its validation logs to the database."""
+def persist_questions(state: AQGState) -> dict[str, Any]:
+    """Node 6: Save validated/finalized question, full prompt traces, and validation logs to DB."""
     logger.info("[LangGraph Node 6] persist_questions started")
     q = state.get("current_question", {})
     if not q or not q.get("question"):
@@ -666,6 +672,7 @@ def persist_questions(state: AQGState) -> Dict[str, Any]:
             "current_question": next_q,
             "current_attempt": 1,
             "validation_logs": [],
+            "stage_traces": next_q.get("stage_traces", []),
         }
 
     session_id = state["session_id"]
@@ -673,27 +680,20 @@ def persist_questions(state: AQGState) -> Dict[str, Any]:
     logs = state.get("validation_logs", [])
     raw_qs = state.get("raw_questions", [])
     current_idx = state.get("current_q_index", 0)
+    stage_traces = q.get("stage_traces", state.get("stage_traces", []))
 
     q_id = str(uuid.uuid4())
     q["id"] = q_id
 
     # Format source reference
-    retrieved = state.get("retrieved_chunks", [])
-    source_ref = q.get("source_reference")
-    if not source_ref and retrieved:
-        refs = []
-        for c in retrieved:
-            meta = c.get("metadata", {})
-            chap = meta.get("chapter", "")
-            sec = meta.get("section_heading", "")
-            ref_str = f"{chap} - {sec}".strip(" -")
-            if ref_str and ref_str not in refs:
-                refs.append(ref_str)
-        source_ref = " | ".join(refs) if refs else "Materi Buku"
+    source_ref = q.get("source_reference") or "Materi Buku"
+    explanation = q.get("explanation") or f"Penjelasan berdasarkan materi {q.get('knowledge_point', '')}."
     q["source_reference"] = source_ref
-
-    explanation = q.get("explanation") or "Penjelasan berdasarkan konteks materi buku."
     q["explanation"] = explanation
+
+    rubric_json = json.dumps(q.get("rubric", []), ensure_ascii=False)
+    answer_elements_json = json.dumps(q.get("answer_elements", []), ensure_ascii=False)
+    prompt_traces_json = json.dumps(stage_traces, ensure_ascii=False)
 
     with get_session() as db:
         db_question = Question(
@@ -709,22 +709,30 @@ def persist_questions(state: AQGState) -> Dict[str, Any]:
             bloom_level=q.get("bloom_level", state.get("bloom_level") or "C2-Memahami"),
             status=q.get("status", "final"),
             refinement_count=q.get("refinement_count", 0),
+            rubric=rubric_json,
+            answer_elements=answer_elements_json,
+            grounding_evidence=q.get("grounding_evidence", ""),
+            knowledge_point=q.get("knowledge_point", ""),
+            prompt_traces=prompt_traces_json,
         )
         db.add(db_question)
 
         # Save validation logs for this question
-        for l in logs:
+        for log_item in logs:
             db_log = ValidationLog(
                 question_id=q_id,
-                attempt_number=l.get("attempt_number", 1),
-                layer=l.get("layer", "grounding"),
-                score_or_verdict=l.get("score_or_verdict", ""),
-                feedback=l.get("feedback", ""),
+                attempt_number=log_item.get("attempt_number", 1),
+                layer=log_item.get("layer", "grounding"),
+                score_or_verdict=log_item.get("score_or_verdict", ""),
+                feedback=log_item.get("feedback", ""),
+                aspect_evaluations=log_item.get("aspect_evaluations"),
             )
             db.add(db_log)
 
+
         db.commit()
-        logger.info("[Node 6] Persisted question id='%s' (status='%s') to DB.", q_id, q.get("status"))
+        logger.info("[Node 6] Persisted multi-stage question id='%s' (status='%s', traces=%d) to DB.",
+                    q_id, q.get("status"), len(stage_traces))
 
     next_idx = current_idx + 1
     next_q = raw_qs[next_idx] if next_idx < len(raw_qs) else {}
@@ -735,4 +743,8 @@ def persist_questions(state: AQGState) -> Dict[str, Any]:
         "current_question": next_q,
         "current_attempt": 1,
         "validation_logs": [],
+        "stage_traces": next_q.get("stage_traces", []),
+        "content_analysis": next_q.get("content_analysis", {}),
+        "cognitive_plan": next_q.get("cognitive_plan", {}),
+        "question_blueprint": next_q.get("question_blueprint", {}),
     }

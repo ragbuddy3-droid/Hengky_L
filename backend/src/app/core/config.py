@@ -1,9 +1,9 @@
 """Configuration management for RAG-AQG strictly from YAML (No .env)."""
 
-import os
 import logging
+import os
 from functools import lru_cache
-from typing import List, Optional
+
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -32,16 +32,19 @@ class AppConfig(BaseModel):
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
     frontend_port: int = 3000
-    cors_origins: List[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
 
 class LLMConfig(BaseModel):
-    provider: str = "groq"
-    groq_api_key: Optional[str] = None
+    provider: str = "openrouter"
+    groq_api_key: str | None = None
     ollama_base_url: str = "http://localhost:11434"
-    generator_model: str = "qwen/qwen3.6-27b"
-    judge_model: str = "qwen/qwen3.6-27b"
+    openrouter_api_key: str | None = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    generator_model: str = "google/gemma-4-31b-it:free"
+    judge_model: str = "google/gemma-4-31b-it:free"
     embedding_model: str = "BAAI/bge-m3"
+
 
 
 class ValidationConfig(BaseModel):
@@ -94,7 +97,7 @@ class Settings(BaseModel):
         return self.app.frontend_port
 
     @property
-    def CORS_ORIGINS(self) -> List[str]:
+    def CORS_ORIGINS(self) -> list[str]:
         return self.app.cors_origins
 
     @property
@@ -102,12 +105,21 @@ class Settings(BaseModel):
         return self.llm.provider
 
     @property
-    def GROQ_API_KEY(self) -> Optional[str]:
+    def GROQ_API_KEY(self) -> str | None:
         return self.llm.groq_api_key
 
     @property
     def OLLAMA_BASE_URL(self) -> str:
         return self.llm.ollama_base_url
+
+    @property
+    def OPENROUTER_API_KEY(self) -> str | None:
+        return self.llm.openrouter_api_key
+
+    @property
+    def OPENROUTER_BASE_URL(self) -> str:
+        return self.llm.openrouter_base_url
+
 
     @property
     def LLM_GENERATOR_MODEL(self) -> str:
@@ -154,11 +166,12 @@ class Settings(BaseModel):
         return self.retrieval.hybrid_sparse_weight
 
     @classmethod
-    def load_from_yaml(cls, yaml_path: Optional[str] = None) -> "Settings":
+    def load_from_yaml(cls, yaml_path: str | None = None) -> "Settings":
         """Load and parse settings strictly from the central YAML configuration file."""
         path = yaml_path or find_yaml_config()
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
+
 
         if not data or not isinstance(data, dict):
             raise ValueError(f"YAML config file at {path} is empty or invalid.")
@@ -168,7 +181,7 @@ class Settings(BaseModel):
         return settings
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """Get cached settings instance strictly derived from central YAML configuration."""
     return Settings.load_from_yaml()

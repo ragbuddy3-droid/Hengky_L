@@ -8,11 +8,15 @@ app:
     - "http://localhost:3000"
 
 llm:
-  provider: "groq"                                # "groq" or "ollama"
+  provider: "openrouter"                          # "openrouter", "groq", "ollama", or "openai"
+  openrouter_api_key: "REDACTED_OPENROUTER_API_KEY"
+  openrouter_base_url: "https://openrouter.ai/api/v1"
+  generator_model: "google/gemma-4-31b-it:free"
+  judge_model: "google/gemma-4-31b-it:free"
+  
+  # Cadangan provider lain
   groq_api_key: "REDACTED_GROQ_API_KEY"
   ollama_base_url: "http://localhost:11434"
-  generator_model: "llama-3.3-70b-versatile"
-  judge_model: "llama-3.3-70b-versatile"
   embedding_model: "BAAI/bge-m3"
 
 validation:

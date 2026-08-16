@@ -1,9 +1,10 @@
 """Sparse lexical retrieval using BM25 Okapi with Indonesian text tokenization."""
 
+import logging
 import re
 import string
-import logging
-from typing import List, Dict, Any
+from typing import Any
+
 from rank_bm25 import BM25Okapi
 
 logger = logging.getLogger(__name__)
@@ -14,10 +15,10 @@ class SparseIndex:
 
     def __init__(self):
         self.bm25: BM25Okapi | None = None
-        self.chunks: List[Dict[str, Any]] = []
+        self.chunks: list[dict[str, Any]] = []
         self._punct_table = str.maketrans("", "", string.punctuation)
 
-    def tokenize(self, text: str) -> List[str]:
+    def tokenize(self, text: str) -> list[str]:
         """Tokenize text into lowercase words stripped of punctuation."""
         if not text:
             return []
@@ -25,7 +26,7 @@ class SparseIndex:
         tokens = [t.strip() for t in re.split(r'\s+', cleaned) if len(t.strip()) > 1]
         return tokens
 
-    def build_index(self, chunks: List[Dict[str, Any]]) -> None:
+    def build_index(self, chunks: list[dict[str, Any]]) -> None:
         """Build BM25 index from document chunks."""
         self.chunks = chunks
         if not chunks:
@@ -37,7 +38,7 @@ class SparseIndex:
         self.bm25 = BM25Okapi(corpus)
         logger.info("SparseIndex built successfully with %d chunks.", len(chunks))
 
-    def query(self, query_text: str, top_k: int = 5) -> List[Dict[str, Any]]:
+    def query(self, query_text: str, top_k: int = 5) -> list[dict[str, Any]]:
         """Query BM25 index and return top-k matches."""
         if not self.bm25 or not self.chunks or not query_text.strip():
             return []
@@ -49,7 +50,7 @@ class SparseIndex:
         scores = self.bm25.get_scores(tokens)
         ranked_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
 
-        results: List[Dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
         for idx in ranked_indices[:top_k]:
             score = float(scores[idx])
             if score <= 0.0 and len(results) >= 1:

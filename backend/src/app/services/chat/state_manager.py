@@ -1,9 +1,10 @@
 """State and history manager for chat interactions."""
 
-import re
 import logging
-from typing import List, Optional
+import re
+
 from sqlalchemy.orm import Session
+
 from app.models.db_models import ChatMessage, Question
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,7 @@ class ChatStateManager:
         self.session_id = session_id
         self.db = db
 
-    def get_history(self, limit: int = 20) -> List[ChatMessage]:
+    def get_history(self, limit: int = 20) -> list[ChatMessage]:
         """Fetch chronological message history for the session."""
         return (
             self.db.query(ChatMessage)
@@ -55,7 +56,7 @@ class ChatStateManager:
 
         return "\n".join(summary_lines)
 
-    def resolve_reference(self, text: str) -> Optional[str]:
+    def resolve_reference(self, text: str) -> str | None:
         """Resolve references like 'soal nomor 3' to past questions in session."""
         match = re.search(r'soal\s+(?:nomor\s+|no\.?\s*)?(\d+)', text, re.IGNORECASE)
         if not match:

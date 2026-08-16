@@ -1,13 +1,18 @@
-"""Questions API router v1."""
+"""Questions API router v1 with Multi-Stage audit inspection."""
 
 import json
 import logging
-from typing import List, Optional
+
 from fastapi import APIRouter, HTTPException, Query
 
 from app.core.database import get_session
-from app.models.db_models import Question, ValidationLog, Chunk
-from app.schemas.api_schemas import ValidationLogResponse, QuestionDetailResponse, UsedChunkResponse
+from app.models.db_models import Chunk, Question, ValidationLog
+from app.schemas.api_schemas import (
+    QuestionDetailResponse,
+    QuestionResponse,
+    UsedChunkResponse,
+    ValidationLogResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +21,7 @@ router = APIRouter(prefix="/questions", tags=["questions"])
 
 @router.get("/{question_id}", response_model=QuestionDetailResponse)
 def get_question(question_id: str):
-    """Get question detail with validation logs and used context chunks."""
+    """Get question detail with multi-stage prompt traces, rubric, and validation logs."""
     with get_session() as db:
         q = db.query(Question).filter(Question.id == question_id).first()
         if not q:
@@ -33,6 +38,8 @@ def get_question(question_id: str):
                 layer=log.layer,
                 score_or_verdict=log.score_or_verdict,
                 feedback=log.feedback,
+                aspect_evaluations=log.aspect_evaluations,
+                created_at=log.created_at,
             )
             for log in logs
         ]
@@ -79,13 +86,18 @@ def get_question(question_id: str):
             bloom_level=q.bloom_level,
             status=q.status,
             refinement_count=q.refinement_count,
+            knowledge_point=getattr(q, "knowledge_point", None),
+            grounding_evidence=getattr(q, "grounding_evidence", None),
+            rubric=getattr(q, "rubric", None),
+            answer_elements=getattr(q, "answer_elements", None),
+            prompt_traces=getattr(q, "prompt_traces", None),
             validation_logs=log_responses,
             used_chunks=used_chunks,
         )
 
 
-@router.get("/")
-def list_questions(session_id: Optional[str] = Query(None)):
+@router.get("/", response_model=list[QuestionResponse])
+def list_questions(session_id: str | None = Query(None)):
     """List questions, filterable by session_id."""
     with get_session() as db:
         query = db.query(Question)
@@ -102,16 +114,23 @@ def list_questions(session_id: Optional[str] = Query(None)):
                 except Exception:
                     opts = None
 
-            result.append({
-                "id": q.id,
-                "question_type": getattr(q, "question_type", "esai") or "esai",
-                "question_text": q.question_text,
-                "options": opts,
-                "answer_key": q.answer_key,
-                "explanation": getattr(q, "explanation", None),
-                "source_reference": getattr(q, "source_reference", None),
-                "bloom_level": q.bloom_level,
-                "status": q.status,
-                "refinement_count": q.refinement_count,
-            })
+            result.append(
+                QuestionResponse(
+                    id=q.id,
+                    question_type=getattr(q, "question_type", "esai") or "esai",
+                    question_text=q.question_text,
+                    options=opts,
+                    answer_key=q.answer_key,
+                    explanation=getattr(q, "explanation", None),
+                    source_reference=getattr(q, "source_reference", None),
+                    bloom_level=q.bloom_level,
+                    status=q.status,
+                    refinement_count=q.refinement_count,
+                    knowledge_point=getattr(q, "knowledge_point", None),
+                    grounding_evidence=getattr(q, "grounding_evidence", None),
+                    rubric=getattr(q, "rubric", None),
+                    answer_elements=getattr(q, "answer_elements", None),
+                    chunk_ids=q.chunk_ids or "[]",
+                )
+            )
         return result

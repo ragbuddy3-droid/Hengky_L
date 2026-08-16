@@ -1,18 +1,18 @@
 """Documents API router v1."""
 
-import uuid
-import time
 import logging
+import time
+import uuid
 from pathlib import Path
-from typing import List, Optional
-from fastapi import APIRouter, UploadFile, BackgroundTasks, HTTPException, Form
+
+from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile
 
 from app.core.database import get_session
-from app.models.db_models import Document, Chunk
-from app.schemas.api_schemas import DocumentUploadResponse, DocumentStatusResponse
+from app.graph.nodes import get_shared_dense_index
+from app.models.db_models import Chunk, Document
+from app.schemas.api_schemas import DocumentStatusResponse, DocumentUploadResponse
 from app.services.ingestion.extractor import process_pdf
 from app.services.ingestion.factory import chunk_text
-from app.graph.nodes import get_shared_dense_index
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +163,7 @@ def get_document_status(document_id: str):
         )
 
 
-@router.get("/", response_model=List[DocumentStatusResponse])
+@router.get("/", response_model=list[DocumentStatusResponse])
 def list_documents():
     """List all documents."""
     with get_session() as db:

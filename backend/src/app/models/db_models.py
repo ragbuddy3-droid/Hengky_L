@@ -1,9 +1,11 @@
 """SQLAlchemy ORM models for backend_new."""
 
 import uuid
-from datetime import datetime, timezone
-from sqlalchemy import Column, String, Integer, Text, DateTime, ForeignKey
+from datetime import UTC, datetime
+
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
+
 from app.core.database import Base
 
 
@@ -14,7 +16,7 @@ def generate_uuid() -> str:
 
 def utcnow() -> datetime:
     """Return current timezone-aware UTC datetime."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Document(Base):
@@ -100,6 +102,14 @@ class Question(Base):
     bloom_level = Column(String, nullable=False)
     status = Column(String, nullable=False, default="final")  # final / needs_review
     refinement_count = Column(Integer, default=0, nullable=False)
+
+    # Multi-Stage AQG Extensions
+    rubric = Column(Text, nullable=True)  # JSON-serialized rubric criteria tiers
+    answer_elements = Column(Text, nullable=True)  # JSON-serialized answer elements with weights
+    grounding_evidence = Column(Text, nullable=True)  # Exact quote from context
+    knowledge_point = Column(Text, nullable=True)  # Specific topic/concept point
+    prompt_traces = Column(Text, nullable=True)  # JSON-serialized execution trace for each stage
+
     created_at = Column(DateTime, default=utcnow)
 
     session = relationship("ChatSession", back_populates="questions")
@@ -118,9 +128,11 @@ class ValidationLog(Base):
     layer = Column(String, nullable=False)  # grounding / judge / pre_check
     score_or_verdict = Column(String, nullable=False)
     feedback = Column(Text, nullable=True)
+    aspect_evaluations = Column(Text, nullable=True)  # JSON-serialized breakdown of 6 judge aspects
     created_at = Column(DateTime, default=utcnow)
 
     question = relationship("Question", back_populates="validation_logs")
 
     def __repr__(self) -> str:
         return f"<ValidationLog(id={self.id}, layer={self.layer}, attempt={self.attempt_number})>"
+

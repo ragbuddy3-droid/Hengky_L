@@ -1,23 +1,23 @@
 """Chat API router v1 with LangGraph AQG background execution."""
 
-import re
 import logging
-from typing import List, Optional
+import re
+
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from app.core.database import get_session
-from app.models.db_models import ChatSession, ChatMessage
-from app.services.chat.session_store import create_session, delete_chat_session
-from app.services.chat.state_manager import ChatStateManager
 from app.graph.workflow import get_aqg_graph
+from app.models.db_models import ChatMessage, ChatSession
 from app.schemas.api_schemas import (
-    ChatSessionCreate,
-    ChatSessionResponse,
-    ChatSessionListItem,
     ChatMessageCreate,
     ChatMessageResponse,
+    ChatSessionCreate,
+    ChatSessionListItem,
+    ChatSessionResponse,
     GenerateParams,
 )
+from app.services.chat.session_store import create_session, delete_chat_session
+from app.services.chat.state_manager import ChatStateManager
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,38 @@ BLOOM_MAPPING = {
     "C5": "C5-Mengevaluasi",
     "C6": "C6-Mencipta",
 }
+
+
+def is_generation_intent(text: str) -> bool:
+    """Robust detection of whether user message expresses intent to generate questions."""
+    if not text:
+        return False
+    t = text.lower().strip()
+
+    # 1. Direct generation action verbs followed by question nouns
+    # e.g., "buatkan 3 soal", "bikin soal", "generate 5 pertanyaan", "minta soal", "tolong buatkan soal"
+    if re.search(r'\b(?:buat(?:kan)?|bikin|generate|minta|tulis(?:kan)?|susun|ciptakan|tolong)\b.*\b(?:soal|pertanyaan|latihan|kuis|ujian)\b', t):
+        return True
+
+    # 2. Number + soal/pertanyaan, e.g. "3 soal", "5 pertanyaan", "10 soal esai"
+    if re.search(r'\b\d+\s*(?:soal|pertanyaan|latihan|kuis)\b', t):
+        return True
+
+    # 3. Bloom level code (C1-C6) with educational/question keywords
+    # e.g., "soal c2", "c4 bab 3", "level c1"
+    if re.search(r'\b(c[1-6])\b', t) and any(w in t for w in ['soal', 'bab', 'esai', 'isian', 'buat', 'materi', 'level']):
+        return True
+
+    # 4. Question type mentions with generation/chapter context
+    if any(q_type in t for q_type in ['esai', 'isian singkat', 'isian', 'pilihan ganda']) and any(w in t for w in ['buat', 'bikin', 'bab', 'soal', 'minta', 'tolong']):
+        return True
+
+    # 5. General fallback combination: question nouns + topic/chapter/level
+    return bool(
+        any(w in t for w in ['soal', 'pertanyaan'])
+        and any(w in t for w in ['bab', 'materi', 'tema', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'tingkat', 'level'])
+    )
+
 
 
 def _parse_generation_params(text: str) -> GenerateParams:
@@ -52,13 +84,14 @@ def _parse_generation_params(text: str) -> GenerateParams:
         bloom_code = match_bloom.group(1).upper()
         bloom_level = BLOOM_MAPPING.get(bloom_code)
 
-    match_chap = re.search(r'bab\s*([\w]+)', text, re.IGNORECASE)
+    match_chap = re.search(r'\bbab\s*([\w]+|[IVXLCDM]+)', text, re.IGNORECASE)
     if match_chap:
         chapter = match_chap.group(1)
 
     logger.debug("Parsed generation params: num_questions=%d, bloom_level=%s, chapter=%s",
                  num_questions, bloom_level, chapter)
     return GenerateParams(num_questions=num_questions, chapter=chapter, bloom_level=bloom_level)
+
 
 
 def background_generate_questions(session_id: str, content: str, params: GenerateParams):
@@ -84,11 +117,17 @@ def background_generate_questions(session_id: str, content: str, params: Generat
             "retrieved_chunks": [],
             "source_chunk_ids": [],
             "chat_history": "",
+            "content_analysis": {},
+            "cognitive_plan": {},
+            "question_blueprint": {},
             "raw_questions": [],
             "current_q_index": 0,
             "current_question": {},
             "current_attempt": 1,
             "max_attempts": 3,
+            "failed_stage": "none",
+            "judge_evaluation": None,
+            "stage_traces": [],
             "validation_logs": [],
             "finalized_questions": [],
             "error": None,
@@ -101,7 +140,7 @@ def background_generate_questions(session_id: str, content: str, params: Generat
         num_final = sum(1 for q in questions if q.get("status") == "final")
         num_review = sum(1 for q in questions if q.get("status") == "needs_review")
 
-        summary_msg = f"Berhasil membuat {len(questions)} soal!\n\n"
+        summary_msg = f"Berhasil membuat {len(questions)} soal Multi-Stage RAG-AQG!\n\n"
         summary_msg += f"• **Lolos Validasi:** {num_final} | **Perlu Tinjauan:** {num_review}\n\n"
 
         for idx, q in enumerate(questions, 1):
@@ -111,10 +150,19 @@ def background_generate_questions(session_id: str, content: str, params: Generat
             q_exp = q.get("explanation", "")
             q_ref = q.get("source_reference", "")
             bloom = q.get("bloom_level", "")
+            rubric = q.get("rubric", [])
 
             summary_msg += f"### Soal #{idx} ({q_type} - {bloom})\n"
             summary_msg += f"**Pertanyaan:** {q_text}\n\n"
-            summary_msg += f"**Jawaban Benar:** {q_ans}\n\n"
+            summary_msg += f"**Jawaban Ideal:** {q_ans}\n\n"
+
+            if rubric and isinstance(rubric, list):
+                summary_msg += "**Rubrik Penilaian:**\n"
+                for r in rubric:
+                    if isinstance(r, dict):
+                        summary_msg += f"- *Skor {r.get('score', 0)}*: {r.get('criteria', '')}\n"
+                summary_msg += "\n"
+
             if q_exp:
                 summary_msg += f"**Penjelasan:** {q_exp}\n\n"
             if q_ref:
@@ -127,17 +175,18 @@ def background_generate_questions(session_id: str, content: str, params: Generat
             db.commit()
             logger.info("[Background] Saved LangGraph completion message for session_id='%s'", session_id)
 
+
     except Exception as e:
         logger.error("[Background] Question generation failed for session_id='%s': %s",
                      session_id, e, exc_info=True)
         with get_session() as db:
             manager = ChatStateManager(session_id, db)
-            manager.add_message("assistant", f"Maaf, terjadi kesalahan saat membuat soal: {str(e)}")
+            manager.add_message("assistant", f"Maaf, terjadi kesalahan saat membuat soal: {e!s}")
             db.commit()
 
 
-@router.get("/sessions", response_model=List[ChatSessionListItem])
-def list_sessions(document_id: Optional[str] = None):
+@router.get("/sessions", response_model=list[ChatSessionListItem])
+def list_sessions(document_id: str | None = None):
     """List all chat sessions, optionally filtered by document_id."""
     with get_session() as db:
         query = db.query(ChatSession)
@@ -186,7 +235,7 @@ def delete_session(session_id: str):
         return {"status": "deleted", "session_id": session_id}
 
 
-@router.get("/sessions/{session_id}/messages", response_model=List[ChatMessageResponse])
+@router.get("/sessions/{session_id}/messages", response_model=list[ChatMessageResponse])
 def get_messages(session_id: str):
     """Get all messages in session."""
     with get_session() as db:
@@ -199,11 +248,11 @@ def send_message(session_id: str, data: ChatMessageCreate, background_tasks: Bac
     """Send a message to the chat session."""
     with get_session() as db:
         manager = ChatStateManager(session_id, db)
-        user_msg = manager.add_message("user", data.content)
+        manager.add_message("user", data.content)
         db.commit()
 
-        keywords = ['buat soal', 'generate', 'buatkan soal', 'bikin soal', 'buatkan 5 soal', 'buat 5 soal', 'soal c']
-        is_generation = any(kw in data.content.lower() for kw in keywords)
+
+        is_generation = is_generation_intent(data.content)
 
         if is_generation:
             params = _parse_generation_params(data.content)
