@@ -6,8 +6,19 @@ from typing import Any
 import numpy as np
 
 from app.services.retrieval.dense_index import DenseIndex
+from app.services.validation.embedding_cache import EmbeddingCache
 
 logger = logging.getLogger(__name__)
+
+_emb_cache: EmbeddingCache | None = None
+
+
+def _get_embedding_cache(model: Any) -> EmbeddingCache:
+    """Get or create singleton embedding cache."""
+    global _emb_cache
+    if _emb_cache is None or _emb_cache._model is not model:
+        _emb_cache = EmbeddingCache(model, max_entries=500)
+    return _emb_cache
 
 
 def compute_grounding_evidence_score(
@@ -25,6 +36,7 @@ def compute_grounding_evidence_score(
     """
     qa_text = f"{question_text} Jawaban: {answer_text}".strip()
     model = dense_idx.model
+    cache = _get_embedding_cache(model)
 
     if not qa_text:
         return {
@@ -33,11 +45,11 @@ def compute_grounding_evidence_score(
             "is_evidence_based": False,
         }
 
-    qa_emb = model.encode([qa_text], normalize_embeddings=True)[0]
+    qa_emb = cache.encode(qa_text)
 
     # Priority 1: Compute against grounding_evidence if present
     if grounding_evidence and len(grounding_evidence.strip()) >= 10:
-        ev_emb = model.encode([grounding_evidence.strip()], normalize_embeddings=True)[0]
+        ev_emb = cache.encode(grounding_evidence.strip())
         score = float(np.dot(qa_emb, ev_emb))
         return {
             "score": max(0.0, min(1.0, score)),
@@ -47,7 +59,7 @@ def compute_grounding_evidence_score(
 
     # Priority 2: Fallback to source chunks if grounding_evidence is missing
     if fallback_chunks:
-        chunk_embs = model.encode(fallback_chunks, normalize_embeddings=True)
+        chunk_embs = cache.encode_batch(fallback_chunks)
         scores = [float(np.dot(qa_emb, ch_emb)) for ch_emb in chunk_embs]
         scores.sort(reverse=True)
         max_score = scores[0] if scores else 0.0

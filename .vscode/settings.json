@@ -1,0 +1,25 @@
+{
+  "basedpyright.analysis.typeCheckingMode": "basic",
+  "basedpyright.analysis.diagnosticSeverityOverrides": {
+    "reportAny": "none",
+    "reportExplicitAny": "none",
+    "reportUnknownVariableType": "none",
+    "reportUnknownMemberType": "none",
+    "reportUnknownArgumentType": "none",
+    "reportUnknownParameterType": "none",
+    "reportMissingTypeStubs": "none",
+    "reportUnannotatedClassAttribute": "none",
+    "reportUnusedCallResult": "none",
+    "reportImplicitStringConcatenation": "none"
+  },
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportAny": "none",
+    "reportExplicitAny": "none",
+    "reportUnknownVariableType": "none",
+    "reportUnknownMemberType": "none",
+    "reportUnknownArgumentType": "none",
+    "reportUnknownParameterType": "none",
+    "reportMissingTypeStubs": "none"
+  }
+}

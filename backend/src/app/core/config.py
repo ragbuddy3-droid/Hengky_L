@@ -3,9 +3,10 @@
 import logging
 import os
 from functools import lru_cache
+from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,15 @@ class LLMConfig(BaseModel):
     generator_model: str = "google/gemma-4-31b-it:free"
     judge_model: str = "google/gemma-4-31b-it:free"
     embedding_model: str = "BAAI/bge-m3"
+
+    @field_validator("openrouter_api_key", "groq_api_key", mode="before")
+    @classmethod
+    def resolve_env_var(cls, v: Any) -> Any:
+        """Resolve ${ENV_VAR} placeholders to actual environment variable values or fallback."""
+        if isinstance(v, str) and v.startswith("${") and v.endswith("}"):
+            env_name = v[2:-1]
+            return os.environ.get(env_name)
+        return v
 
 
 

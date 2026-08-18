@@ -94,7 +94,7 @@ def _parse_generation_params(text: str) -> GenerateParams:
 
 
 
-def background_generate_questions(session_id: str, content: str, params: GenerateParams):
+async def background_generate_questions(session_id: str, content: str, params: GenerateParams):
     """Background task to generate questions via the compiled LangGraph StateGraph."""
     logger.info("[Background] Starting LangGraph AQG execution for session_id='%s'", session_id)
 
@@ -134,7 +134,7 @@ def background_generate_questions(session_id: str, content: str, params: Generat
         }
 
         graph = get_aqg_graph()
-        final_state = graph.invoke(initial_state)
+        final_state = await graph.ainvoke(initial_state)
 
         questions = final_state.get("finalized_questions", [])
         num_final = sum(1 for q in questions if q.get("status") == "final")

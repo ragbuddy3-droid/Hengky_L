@@ -1,0 +1,27 @@
+{
+  "include": [
+    "backend/src",
+    "backend/tests"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "backend/.venv",
+    "backend/data"
+  ],
+  "extraPaths": [
+    "backend/src"
+  ],
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "reportAny": false,
+  "reportExplicitAny": false,
+  "reportUnknownVariableType": false,
+  "reportUnknownMemberType": false,
+  "reportUnknownArgumentType": false,
+  "reportUnknownParameterType": false,
+  "reportMissingTypeStubs": false,
+  "reportUnannotatedClassAttribute": false,
+  "reportUnusedCallResult": false,
+  "reportImplicitStringConcatenation": false
+}

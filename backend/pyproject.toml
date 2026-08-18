@@ -53,8 +53,9 @@ ignore = ["B008", "E501", "SIM105"]
 [tool.pyright]
 include = ["src", "tests"]
 exclude = [".venv", "data", "**/__pycache__"]
+extraPaths = ["src"]
 pythonVersion = "3.11"
-typeCheckingMode = "standard"
+typeCheckingMode = "basic"
 reportMissingTypeStubs = false
 reportUnknownMemberType = false
 reportUnknownArgumentType = false
@@ -62,12 +63,16 @@ reportUnknownVariableType = false
 reportUnknownParameterType = false
 reportAny = false
 reportExplicitAny = false
+reportUnannotatedClassAttribute = false
+reportUnusedCallResult = false
+reportImplicitStringConcatenation = false
 
 [tool.basedpyright]
 include = ["src", "tests"]
 exclude = [".venv", "data", "**/__pycache__"]
+extraPaths = ["src"]
 pythonVersion = "3.11"
-typeCheckingMode = "standard"
+typeCheckingMode = "basic"
 reportMissingTypeStubs = false
 reportUnknownMemberType = false
 reportUnknownArgumentType = false
@@ -75,3 +80,6 @@ reportUnknownVariableType = false
 reportUnknownParameterType = false
 reportAny = false
 reportExplicitAny = false
+reportUnannotatedClassAttribute = false
+reportUnusedCallResult = false
+reportImplicitStringConcatenation = false

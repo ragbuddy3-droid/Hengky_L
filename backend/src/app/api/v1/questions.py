@@ -93,6 +93,7 @@ def get_question(question_id: str):
             prompt_traces=getattr(q, "prompt_traces", None),
             validation_logs=log_responses,
             used_chunks=used_chunks,
+            quality_warnings=getattr(q, "quality_warnings", None),
         )
 
 
@@ -131,6 +132,7 @@ def list_questions(session_id: str | None = Query(None)):
                     rubric=getattr(q, "rubric", None),
                     answer_elements=getattr(q, "answer_elements", None),
                     chunk_ids=q.chunk_ids or "[]",
+                    quality_warnings=getattr(q, "quality_warnings", None),
                 )
             )
         return result

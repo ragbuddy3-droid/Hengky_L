@@ -43,7 +43,7 @@ class Chunk(Base):
     __tablename__ = "chunks"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    document_id = Column(String, ForeignKey("documents.id"), nullable=False)
+    document_id = Column(String, ForeignKey("documents.id"), nullable=False, index=True)
     text = Column(Text, nullable=False)
     category = Column(String, nullable=False)  # Konsep / Narasi / Instruksi / Evaluasi
     section_heading = Column(String, nullable=True)
@@ -61,7 +61,7 @@ class ChatSession(Base):
     __tablename__ = "chat_sessions"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    document_id = Column(String, ForeignKey("documents.id"), nullable=False)
+    document_id = Column(String, ForeignKey("documents.id"), nullable=False, index=True)
     created_at = Column(DateTime, default=utcnow)
 
     document = relationship("Document", back_populates="chat_sessions")
@@ -76,7 +76,7 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    session_id = Column(String, ForeignKey("chat_sessions.id"), nullable=False)
+    session_id = Column(String, ForeignKey("chat_sessions.id"), nullable=False, index=True)
     role = Column(String, nullable=False)  # user / assistant
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=utcnow)
@@ -91,7 +91,7 @@ class Question(Base):
     __tablename__ = "questions"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    session_id = Column(String, ForeignKey("chat_sessions.id"), nullable=False)
+    session_id = Column(String, ForeignKey("chat_sessions.id"), nullable=False, index=True)
     chunk_ids = Column(Text, nullable=False)  # JSON-serialized list of chunk IDs
     question_type = Column(String, nullable=False, default="esai")  # esai / isian_singkat
     question_text = Column(Text, nullable=False)
@@ -109,6 +109,7 @@ class Question(Base):
     grounding_evidence = Column(Text, nullable=True)  # Exact quote from context
     knowledge_point = Column(Text, nullable=True)  # Specific topic/concept point
     prompt_traces = Column(Text, nullable=True)  # JSON-serialized execution trace for each stage
+    quality_warnings = Column(Text, nullable=True)  # JSON list of quality issue strings
 
     created_at = Column(DateTime, default=utcnow)
 
@@ -123,7 +124,7 @@ class ValidationLog(Base):
     __tablename__ = "validation_logs"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    question_id = Column(String, ForeignKey("questions.id"), nullable=False)
+    question_id = Column(String, ForeignKey("questions.id"), nullable=False, index=True)
     attempt_number = Column(Integer, nullable=False)
     layer = Column(String, nullable=False)  # grounding / judge / pre_check
     score_or_verdict = Column(String, nullable=False)

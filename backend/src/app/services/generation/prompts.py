@@ -1,6 +1,7 @@
 """Prompt templates for Multi-Stage RAG-AQG pipeline.
 
 Includes:
+- System Persona constants (digunakan sebagai SystemMessage terpisah)
 - Stage 1: Context Understanding Prompt
 - Stage 2: Cognitive Bloom Planning Prompt
 - Stage 3: Question Blueprint Prompt
@@ -10,9 +11,41 @@ Includes:
 - Refinement Prompt B (Planning-level cognitive mismatch repair)
 """
 
-STAGE1_CONTEXT_UNDERSTANDING_PROMPT = """Anda adalah instructional content analyst untuk materi pelajaran Sekolah Dasar (SD).
+# ── System Personas (digunakan sebagai SystemMessage terpisah) ──
 
-Tugas Anda menganalisis materi pembelajaran berdasarkan CONTEXT yang diberikan.
+SYSTEM_ANALYSIS_PERSONA = (
+    "Anda adalah instructional content analyst untuk materi pelajaran Sekolah Dasar (SD). "
+    "Aturan: (1) Gunakan HANYA informasi dari CONTEXT. (2) Respons HARUS format JSON valid tanpa markdown code block. "
+    "(3) Jangan tambahkan pengetahuan di luar CONTEXT."
+)
+
+SYSTEM_DESIGNER_PERSONA = (
+    "Anda adalah instructional designer menggunakan Revised Bloom's Taxonomy untuk siswa SD. "
+    "Aturan: (1) Cakupan hanya C1-C4. (2) Respons HARUS format JSON valid tanpa markdown code block. "
+    "(3) Jangan gunakan informasi di luar yang diberikan."
+)
+
+SYSTEM_GENERATOR_PERSONA = (
+    "Anda adalah generator soal evaluasi untuk siswa Sekolah Dasar (SD). "
+    "Aturan: (1) Gunakan Bahasa Indonesia sederhana dan ramah anak. (2) Respons HARUS format JSON valid tanpa markdown code block. "
+    "(3) Soal harus sepenuhnya didukung CONTEXT."
+)
+
+SYSTEM_JUDGE_PERSONA = (
+    "Anda adalah evaluator kualitas soal pendidikan untuk siswa Sekolah Dasar (SD). "
+    "Aturan: (1) Evaluasi objektif dan independen. (2) Respons HARUS format JSON valid tanpa markdown code block."
+)
+
+SYSTEM_REFINEMENT_PERSONA = (
+    "Anda adalah question refinement agent. "
+    "Aturan: (1) Perbaiki HANYA aspek yang dinyatakan gagal pada feedback validator. (2) Jangan ubah yang sudah benar. "
+    "(3) Respons HARUS format JSON valid tanpa markdown code block."
+)
+
+
+# ── Stage Prompts ──
+
+STAGE1_CONTEXT_UNDERSTANDING_PROMPT = """Analisis materi pembelajaran berdasarkan CONTEXT yang diberikan.
 Gunakan HANYA informasi yang terdapat dalam CONTEXT. Jangan menggunakan pengetahuan eksternal apa pun.
 
 Identifikasi:
@@ -41,7 +74,7 @@ OUTPUT JSON:
 }}
 """
 
-STAGE2_COGNITIVE_PLANNING_PROMPT = """Anda adalah instructional designer yang menggunakan Revised Bloom's Taxonomy, khusus untuk audiens siswa Sekolah Dasar (SD).
+STAGE2_COGNITIVE_PLANNING_PROMPT = """Rancang cognitive plan untuk soal evaluasi berdasarkan data berikut.
 
 TARGET COGNITIVE LEVEL: {target_bloom_level}
 Cakupan level yang diizinkan HANYA: C1-Mengingat, C2-Memahami, C3-Menerapkan, C4-Menganalisis. Level C5-Mengevaluasi dan C6-Mencipta TIDAK BOLEH digunakan untuk jenjang SD.
@@ -86,7 +119,7 @@ OUTPUT JSON:
 }}
 """
 
-STAGE3_QUESTION_BLUEPRINT_PROMPT = """Anda adalah question designer untuk soal evaluasi SD berbentuk isian/esai.
+STAGE3_QUESTION_BLUEPRINT_PROMPT = """Buat rancangan (blueprint) pertanyaan evaluasi SD berbentuk isian/esai sebelum menulis pertanyaan final.
 
 Gunakan informasi berikut:
 
@@ -95,8 +128,6 @@ CONTENT ANALYSIS:
 
 COGNITIVE PLAN:
 {cognitive_plan}
-
-Buat rancangan (blueprint) pertanyaan sebelum menulis pertanyaan final.
 
 Tentukan:
 1. knowledge_point (spesifik, bukan topik umum)
@@ -125,7 +156,7 @@ OUTPUT JSON:
 }}
 """
 
-STAGE4_QUESTION_GENERATION_PROMPT = """Anda adalah generator soal evaluasi untuk siswa Sekolah Dasar (SD).
+STAGE4_QUESTION_GENERATION_PROMPT = """Buat SATU pertanyaan {question_type} beserta jawaban ideal dan rubrik penilaiannya, mengikuti QUESTION BLUEPRINT.
 
 Gunakan:
 
@@ -137,8 +168,6 @@ QUESTION BLUEPRINT:
 
 CONTOH SOAL SEJENIS (few-shot, level & tipe soal yang sama):
 {few_shot_examples}
-
-Buat SATU pertanyaan {question_type} beserta jawaban ideal dan rubrik penilaiannya, mengikuti QUESTION BLUEPRINT.
 
 Ketentuan:
 1. Pertanyaan harus sepenuhnya didukung oleh grounding_evidence pada blueprint; jangan menambahkan fakta di luar CONTEXT.
@@ -168,9 +197,7 @@ OUTPUT JSON:
 }}
 """
 
-LLM_JUDGE_PROMPT = """Anda adalah evaluator kualitas soal pendidikan untuk siswa Sekolah Dasar (SD).
-
-Evaluasi paket soal berikut secara bersamaan — question, expected_answer, dan rubric adalah satu kesatuan yang harus dinilai bersama, bukan terpisah.
+LLM_JUDGE_PROMPT = """Evaluasi paket soal berikut secara bersamaan — question, expected_answer, dan rubric adalah satu kesatuan yang harus dinilai bersama, bukan terpisah.
 
 CONTEXT:
 {retrieved_context}
@@ -219,7 +246,7 @@ OUTPUT JSON:
 }}
 """
 
-REFINEMENT_PROMPT_A = """Anda adalah question refinement agent.
+REFINEMENT_PROMPT_A = """Perbaiki HANYA aspek yang dinyatakan gagal pada FEEDBACK VALIDATOR. Jangan mengubah knowledge_point atau cognitive_operation yang sudah benar.
 
 QUESTION SAAT INI:
 {question}
@@ -238,8 +265,6 @@ CONTEXT:
 
 FEEDBACK VALIDATOR:
 {validation_feedback}
-
-Perbaiki HANYA aspek yang dinyatakan gagal pada FEEDBACK VALIDATOR. Jangan mengubah knowledge_point atau cognitive_operation yang sudah benar.
 
 Ketentuan:
 1. Jika grounding gagal -> ganti bagian yang tidak didukung CONTEXT, gunakan ulang grounding_evidence dari blueprint.
@@ -267,7 +292,7 @@ OUTPUT JSON:
 }}
 """
 
-REFINEMENT_PROMPT_B = """Anda adalah instructional designer, bertugas merancang ulang rencana kognitif soal yang gagal validasi.
+REFINEMENT_PROMPT_B = """Rancang ulang COGNITIVE PLAN agar operasi kognitifnya benar-benar sesuai TARGET BLOOM ({target_bloom_level}), bukan {detected_level}. Perhatikan pola pertanyaan sebelumnya yang menyebabkan level meleset, dan masukkan ke prohibited_question_pattern agar tidak terulang.
 
 COGNITIVE PLAN SEBELUMNYA:
 {cognitive_plan}
@@ -281,8 +306,6 @@ FEEDBACK VALIDATOR:
 
 CONTENT ANALYSIS:
 {content_analysis}
-
-Rancang ulang COGNITIVE PLAN agar operasi kognitifnya benar-benar sesuai TARGET BLOOM ({target_bloom_level}), bukan {detected_level}. Perhatikan pola pertanyaan sebelumnya yang menyebabkan level meleset, dan masukkan ke prohibited_question_pattern agar tidak terulang.
 
 OUTPUT JSON:
 {{

@@ -105,3 +105,4 @@ class PromptStageTrace(BaseModel):
     latency_ms: int = Field(default=0, description="Durasi eksekusi dalam milidetik")
     status: str = Field(default="success", description="success / error / fallback")
     error_message: str | None = Field(default=None, description="Pesan error jika ada")
+    has_fallback: bool = Field(default=False, description="True jika output menggunakan data fallback/dummy")

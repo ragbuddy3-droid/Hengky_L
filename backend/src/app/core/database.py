@@ -22,9 +22,24 @@ if settings.DATABASE_URL.startswith("sqlite"):
 
 engine = create_engine(
     settings.DATABASE_URL,
-    connect_args={"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {},
-    echo=False
+    connect_args={
+        "check_same_thread": False,
+        "timeout": 30,
+    } if settings.DATABASE_URL.startswith("sqlite") else {},
+    echo=False,
+    pool_pre_ping=True,
 )
+
+# Enable WAL mode for better SQLite concurrent access
+if settings.DATABASE_URL.startswith("sqlite"):
+    from sqlalchemy import event
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_conn, connection_record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -66,10 +81,17 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables verified and initialized.")
 
-    # Lightweight migration for SQLite to ensure all columns exist
+    # Lightweight migration and index creation for SQLite
     if settings.DATABASE_URL.startswith("sqlite"):
         try:
             with engine.connect() as conn:
+                # Ensure foreign key indexes exist
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_chunks_document_id ON chunks(document_id);"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_questions_session_id ON questions(session_id);"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_chat_messages_session_id ON chat_messages(session_id);"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_validation_logs_question_id ON validation_logs(question_id);"))
+                conn.commit()
+
                 res = conn.execute(text("PRAGMA table_info(questions);")).fetchall()
                 existing_cols = {row[1] for row in res}
 
@@ -112,6 +134,11 @@ def init_db() -> None:
                     if "prompt_traces" not in existing_cols:
                         logger.info("Migrating database: adding prompt_traces column to questions table")
                         conn.execute(text("ALTER TABLE questions ADD COLUMN prompt_traces TEXT;"))
+                        conn.commit()
+
+                    if "quality_warnings" not in existing_cols:
+                        logger.info("Migrating database: adding quality_warnings column to questions table")
+                        conn.execute(text("ALTER TABLE questions ADD COLUMN quality_warnings TEXT;"))
                         conn.commit()
 
                 # Migration for validation_logs table

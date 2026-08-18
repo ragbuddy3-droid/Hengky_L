@@ -6,6 +6,10 @@ import re
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_huggingface import HuggingFaceEmbeddings
 
+from app.services.ingestion.chunkers.classifiers import (
+    classify_chunk_category,
+    extract_chapter_and_heading,
+)
 from app.services.ingestion.chunkers.fixed_chunker import ChunkResult
 
 logger = logging.getLogger(__name__)
@@ -40,42 +44,6 @@ class SemanticChunkerWrapper:
         )
         logger.info("SemanticChunkerWrapper ready.")
 
-    def _classify_category(self, text: str) -> str:
-        """Classify text chunk into pedagogical categories."""
-        lower = text.lower()
-        eval_keywords = ["latihan", "soal", "uji kompetensi", "evaluasi", "jawablah", "pilihlah jawaban", "tugas individu"]
-        instr_keywords = ["amati", "lakukan", "diskusikan", "buatlah", "tugas kelompok", "ayo mencoba", "petunjuk", "langkah"]
-        konsep_patterns = [r'\b(adalah|merupakan|yaitu|artinya|didefinisikan sebagai|terdiri atas|fungsi dari|organ|sistem)\b']
-
-        if any(k in lower for k in eval_keywords):
-            return "Evaluasi"
-        if any(k in lower for k in instr_keywords):
-            return "Instruksi"
-        if any(re.search(pat, lower) for pat in konsep_patterns):
-            return "Konsep"
-        return "Narasi"
-
-    def _extract_chapter_and_heading(self, text: str, prev_chapter: str | None, prev_heading: str | None):
-        """Extract or inherit chapter and heading from text lines."""
-        chapter = prev_chapter
-        heading = prev_heading
-
-        lines = [line.strip() for line in text.split("\n") if line.strip()]
-        for line in lines[:3]:
-            chap_match = re.search(r'\b(Bab|Chapter|Unit|Pembelajaran|Modul)\s+([\w\d]+)', line, re.IGNORECASE)
-            if chap_match:
-                chapter = chap_match.group(0)
-
-            if (
-                2 <= len(line.split()) <= 8
-                and not line.endswith((".", ":", "?", "!"))
-                and not re.search(r'^(gambar|tabel|sumber)\b', line, re.IGNORECASE)
-            ):
-                heading = line
-
-        return chapter, heading
-
-
     def chunk(self, text: str, max_chunk_size: int | None = None) -> list[ChunkResult]:
         """Split text into semantic chunks with pedagogical metadata."""
         if not text or not text.strip():
@@ -93,8 +61,8 @@ class SemanticChunkerWrapper:
             if not content or len(content.split()) < 10:
                 continue
 
-            current_chapter, current_heading = self._extract_chapter_and_heading(content, current_chapter, current_heading)
-            category = self._classify_category(content)
+            current_chapter, current_heading = extract_chapter_and_heading(content, current_chapter, current_heading)
+            category = classify_chunk_category(content)
 
             results.append(
                 ChunkResult(

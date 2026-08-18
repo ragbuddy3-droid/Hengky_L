@@ -145,8 +145,21 @@ class QuestionResponse(BaseModel):
     answer_elements: list[AnswerElementResponse] | None = []
     source_chunks: list[str] = Field(default=[], validation_alias="chunk_ids")
     used_chunks: list[UsedChunkResponse] = []
+    quality_warnings: list[str] | None = []
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    @field_validator("quality_warnings", mode="before")
+    def parse_quality_warnings(cls, v: Any) -> list[str]:
+        if not v:
+            return []
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                return [str(x) for x in parsed] if isinstance(parsed, list) else []
+            except (json.JSONDecodeError, TypeError, ValueError):
+                return []
+        return v if isinstance(v, list) else []
 
     @field_validator("options", mode="before")
     def parse_options(cls, v):
@@ -222,8 +235,21 @@ class QuestionDetailResponse(BaseModel):
     prompt_traces: list[PromptTraceItemResponse] | None = []
     validation_logs: list[ValidationLogResponse] = []
     used_chunks: list[UsedChunkResponse] = []
+    quality_warnings: list[str] | None = []
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("quality_warnings", mode="before")
+    def parse_quality_warnings_detail(cls, v: Any) -> list[str]:
+        if not v:
+            return []
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                return [str(x) for x in parsed] if isinstance(parsed, list) else []
+            except (json.JSONDecodeError, TypeError, ValueError):
+                return []
+        return v if isinstance(v, list) else []
 
     @field_validator("rubric", mode="before")
     def parse_rubric_detail(cls, v: Any) -> list[Any]:
