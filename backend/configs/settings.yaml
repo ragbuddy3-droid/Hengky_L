@@ -9,13 +9,13 @@ app:
 
 llm:
   provider: "openrouter"                          # "openrouter", "groq", "ollama", or "openai"
-  openrouter_api_key: "${OPENROUTER_API_KEY}"
+  openrouter_api_key: "REDACTED_OPENROUTER_API_KEY"
   openrouter_base_url: "https://openrouter.ai/api/v1"
   generator_model: "google/gemma-4-31b-it:free"
   judge_model: "google/gemma-4-31b-it:free"
-  
+
   # Cadangan provider lain
-  groq_api_key: "${GROQ_API_KEY}"
+  groq_api_key: "REDACTED_GROQ_API_KEY"
   ollama_base_url: "http://localhost:11434"
   embedding_model: "BAAI/bge-m3"
 

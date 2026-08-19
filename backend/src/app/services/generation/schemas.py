@@ -42,9 +42,10 @@ class QuestionBlueprint(BaseModel):
     question_type: str = Field(default="esai", description="Format soal (isian_singkat / esai)")
     question_intent: str = Field(default="", description="Tujuan/indikator pengukuran siswa")
     grounding_evidence: str = Field(default="", description="Kutipan persis dari teks buku sebagai bukti grounding")
-    expected_answer_elements: list[str] = Field(default_factory=list, description="Poin-poin kunci jawaban ideal")
+    expected_answer_summary: str = Field(default="", description="Ringkasan inti jawaban ideal yang diharapkan")
+    expected_answer_elements: list[str] = Field(default_factory=list, description="Poin-poin kunci jawaban ideal (opsional)")
     answer_scope: str = Field(default="", description="Batasan panjang dan kedalaman jawaban siswa SD")
-    scoring_criteria: list[str] = Field(default_factory=list, description="Kriteria penskoran umum")
+    scoring_criteria: list[str] = Field(default_factory=list, description="Kriteria penskoran (opsional)")
 
     model_config = ConfigDict(extra="ignore")
 
@@ -67,8 +68,9 @@ class QuestionPackage(BaseModel):
     knowledge_point: str = Field(default="", description="Pokok materi")
     grounding_evidence: str = Field(default="", description="Kutipan kalimat bukti dari buku")
     expected_answer: str = Field(description="Jawaban ideal yang benar dan konkret")
-    answer_elements: list[AnswerElement] = Field(default_factory=list, description="Rincian poin kunci jawaban")
-    rubric: list[RubricCriterion] = Field(default_factory=list, description="Rubrik penilaian bertingkat")
+    explanation: str = Field(default="", description="Penjelasan konteks materi dan alasan jawaban")
+    answer_elements: list[AnswerElement] = Field(default_factory=list, description="Rincian poin kunci jawaban (opsional)")
+    rubric: list[RubricCriterion] = Field(default_factory=list, description="Rubrik penilaian bertingkat (opsional)")
 
     model_config = ConfigDict(extra="ignore")
 

@@ -448,13 +448,13 @@ async def generate_questions(state: AQGState) -> dict[str, Any]:
                 "question": q_pkg.question,
                 "question_type": q_pkg.question_type,
                 "answer": q_pkg.expected_answer,
-                "explanation": f"Berdasarkan analisis materi '{c_analysis.topic}'. Poin uji: {q_blueprint.knowledge_point}.",
+                "explanation": q_pkg.explanation or f"Berdasarkan analisis materi '{c_analysis.topic}'. Poin uji: {q_blueprint.knowledge_point}.",
                 "source_reference": src_ref,
                 "bloom_level": q_pkg.cognitive_level or bloom_level,
                 "knowledge_point": q_pkg.knowledge_point or q_blueprint.knowledge_point,
                 "grounding_evidence": q_pkg.grounding_evidence or q_blueprint.grounding_evidence,
-                "answer_elements": [e.model_dump() for e in q_pkg.answer_elements],
-                "rubric": [r.model_dump() for r in q_pkg.rubric],
+                "answer_elements": [],
+                "rubric": [],
                 "content_analysis": c_analysis.model_dump(),
                 "cognitive_plan": cog_plan.model_dump(),
                 "question_blueprint": q_blueprint.model_dump(),
@@ -606,7 +606,7 @@ async def llm_judge_evaluation(state: AQGState) -> dict[str, Any]:
         grounding_evidence=q.get("grounding_evidence", ""),
         question=q.get("question", ""),
         expected_answer=q.get("answer", ""),
-        rubric=q.get("rubric", []),
+        explanation=q.get("explanation", ""),
         target_bloom_level=target_bloom,
         attempt=attempt,
     )
@@ -621,12 +621,12 @@ async def llm_judge_evaluation(state: AQGState) -> dict[str, Any]:
         q["refinement_count"] = attempt - 1
 
     feedback_parts = []
-    for aspect_name in ["grounding", "bloom_adherence", "bahasa", "answerability", "answer_alignment", "rubric_alignment"]:
+    for aspect_name in ["grounding", "bloom_adherence", "bahasa", "answerability", "answer_alignment"]:
         asp: Any = getattr(judge_eval, aspect_name, None)
         if asp and getattr(asp, "status", "") == "fail":
             feedback_parts.append(f"[{aspect_name.upper()}] {asp.feedback}")
 
-    full_feedback = " ; ".join(feedback_parts) if feedback_parts else "Semua aspek rubrik juri lolos."
+    full_feedback = " ; ".join(feedback_parts) if feedback_parts else "Semua aspek evaluasi juri lolos."
 
     log_entry = {
         "attempt_number": attempt,
@@ -656,7 +656,7 @@ async def self_refinement(state: AQGState) -> dict[str, Any]:
     """
     Node 5: Smart Self-Refinement Router:
     - If failed_stage == "planning" -> Refinement Prompt B (re-plans Bloom & Blueprint) -> re-generates.
-    - If failed_stage == "generation" (default) -> Refinement Prompt A (repairs wording/grounding/rubric).
+    - If failed_stage == "generation" (default) -> Refinement Prompt A (repairs wording/grounding/explanation).
     """
     attempt = state.get("current_attempt", 1) + 1
     max_attempts = state.get("max_attempts", 3)
@@ -727,8 +727,9 @@ async def self_refinement(state: AQGState) -> dict[str, Any]:
 
         q["question"] = new_pkg.question
         q["answer"] = new_pkg.expected_answer
-        q["answer_elements"] = [e.model_dump() for e in new_pkg.answer_elements]
-        q["rubric"] = [r.model_dump() for r in new_pkg.rubric]
+        q["explanation"] = new_pkg.explanation or q.get("explanation", "")
+        q["answer_elements"] = []
+        q["rubric"] = []
         q["grounding_evidence"] = new_pkg.grounding_evidence or new_blueprint.grounding_evidence
         q["cognitive_plan"] = new_plan.model_dump()
         q["question_blueprint"] = new_blueprint.model_dump()
@@ -740,7 +741,7 @@ async def self_refinement(state: AQGState) -> dict[str, Any]:
             chat_model=chat_model,
             question=q.get("question", ""),
             expected_answer=q.get("answer", ""),
-            rubric=q.get("rubric", []),
+            explanation=q.get("explanation", ""),
             blueprint=q_blueprint,
             retrieved_context=context_str,
             validation_feedback=last_feedback,
@@ -752,8 +753,9 @@ async def self_refinement(state: AQGState) -> dict[str, Any]:
 
         q["question"] = new_pkg.question
         q["answer"] = new_pkg.expected_answer
-        q["answer_elements"] = [e.model_dump() for e in new_pkg.answer_elements]
-        q["rubric"] = [r.model_dump() for r in new_pkg.rubric]
+        q["explanation"] = new_pkg.explanation or q.get("explanation", "")
+        q["answer_elements"] = []
+        q["rubric"] = []
         q["grounding_evidence"] = new_pkg.grounding_evidence or q_blueprint.grounding_evidence
 
     q["stage_traces"] = curr_traces

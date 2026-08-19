@@ -87,18 +87,17 @@ def test_stage3_question_blueprint_schema():
         "question_type": "esai",
         "question_intent": "Mengukur pemahaman fungsi bilik kiri memompa darah ke seluruh tubuh",
         "grounding_evidence": "Bilik kiri bertugas memompa darah bersih ke seluruh tubuh.",
-        "expected_answer_elements": ["Bilik kiri", "Memompa darah bersih/kaya oksigen", "Ke seluruh tubuh"],
+        "expected_answer_summary": "Bilik kiri memompa darah bersih/kaya oksigen ke seluruh tubuh.",
         "answer_scope": "1-2 kalimat untuk siswa SD kelas 5",
-        "scoring_criteria": ["Menyebutkan fungsi memompa darah ke seluruh tubuh"]
     }
     obj = QuestionBlueprint.model_validate(data)
     assert obj.knowledge_point == "Fungsi bilik kiri jantung"
     assert "seluruh tubuh" in obj.grounding_evidence
-    assert len(obj.expected_answer_elements) == 3
+    assert "Bilik kiri" in obj.expected_answer_summary
 
 
 def test_stage4_question_package_schema():
-    """Verify Stage 4 QuestionPackage schema with 3-tier rubric validation."""
+    """Verify Stage 4 QuestionPackage schema with explanation validation."""
     data = {
         "question": "Jelaskan fungsi dari bilik kiri pada jantung manusia!",
         "question_type": "esai",
@@ -106,31 +105,22 @@ def test_stage4_question_package_schema():
         "knowledge_point": "Fungsi bilik kiri",
         "grounding_evidence": "Bilik kiri bertugas memompa darah bersih ke seluruh tubuh.",
         "expected_answer": "Bilik kiri berfungsi untuk memompa darah bersih yang kaya oksigen ke seluruh tubuh.",
-        "answer_elements": [
-            {"element": "Memompa darah bersih / oksigen", "weight": 1},
-            {"element": "Menuju seluruh bagian tubuh", "weight": 1}
-        ],
-        "rubric": [
-            {"score": 0, "criteria": "Jawaban salah atau tidak menjawab."},
-            {"score": 1, "criteria": "Hanya menyebutkan memompa darah tanpa menyebutkan ke seluruh tubuh."},
-            {"score": 2, "criteria": "Menjelaskan secara tepat bahwa bilik kiri memompa darah bersih ke seluruh tubuh."}
-        ]
+        "explanation": "Jantung memiliki 4 ruang, di mana bilik kiri khusus memompa darah bersih ke seluruh organ tubuh."
     }
     obj = QuestionPackage.model_validate(data)
-    assert len(obj.rubric) == 3
-    assert obj.rubric[2].score == 2
-    assert len(obj.answer_elements) == 2
+    assert obj.question.startswith("Jelaskan")
+    assert "bilik kiri" in obj.explanation
+    assert len(obj.rubric) == 0
 
 
 def test_llm_judge_evaluation_schema():
-    """Verify LLM-as-Judge 6-aspect evaluation schema."""
+    """Verify LLM-as-Judge evaluation schema."""
     data = {
         "grounding": {"status": "pass", "score": 0.95, "feedback": "Didukung teks."},
         "bloom_adherence": {"status": "pass", "detected_level": "C2-Memahami", "feedback": "Sesuai level C2."},
         "bahasa": {"status": "pass", "feedback": "Bahasa sederhana untuk SD."},
         "answerability": {"status": "pass", "feedback": "Dapat dijawab dari konteks."},
-        "answer_alignment": {"status": "pass", "feedback": "Jawaban relevan."},
-        "rubric_alignment": {"status": "pass", "feedback": "Rubrik 3 tingkat konsisten."},
+        "answer_alignment": {"status": "pass", "feedback": "Jawaban dan penjelasan relevan."},
         "overall": "pass",
         "failed_stage": "none"
     }

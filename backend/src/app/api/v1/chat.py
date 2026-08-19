@@ -150,21 +150,13 @@ async def background_generate_questions(session_id: str, content: str, params: G
             q_exp = q.get("explanation", "")
             q_ref = q.get("source_reference", "")
             bloom = q.get("bloom_level", "")
-            rubric = q.get("rubric", [])
 
             summary_msg += f"### Soal #{idx} ({q_type} - {bloom})\n"
             summary_msg += f"**Pertanyaan:** {q_text}\n\n"
             summary_msg += f"**Jawaban Ideal:** {q_ans}\n\n"
 
-            if rubric and isinstance(rubric, list):
-                summary_msg += "**Rubrik Penilaian:**\n"
-                for r in rubric:
-                    if isinstance(r, dict):
-                        summary_msg += f"- *Skor {r.get('score', 0)}*: {r.get('criteria', '')}\n"
-                summary_msg += "\n"
-
             if q_exp:
-                summary_msg += f"**Penjelasan:** {q_exp}\n\n"
+                summary_msg += f"**Penjelasan & Konteks:** {q_exp}\n\n"
             if q_ref:
                 summary_msg += f"**Referensi Materi:** `{q_ref}`\n\n"
             summary_msg += "---\n\n"

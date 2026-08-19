@@ -1,11 +1,11 @@
-"""Prompt templates for Multi-Stage RAG-AQG pipeline.
+"""Prompt templates for Multi-Stage RAG-AQG pipeline (Optimized: Question, Answer, and Explanation).
 
 Includes:
 - System Persona constants (digunakan sebagai SystemMessage terpisah)
 - Stage 1: Context Understanding Prompt
 - Stage 2: Cognitive Bloom Planning Prompt
 - Stage 3: Question Blueprint Prompt
-- Stage 4: Question Generation Prompt (Question + Answer + Rubric)
+- Stage 4: Question Generation Prompt (Question + Answer + Explanation)
 - LLM-as-Judge Prompt (Layer 2)
 - Refinement Prompt A (Generation-level repair)
 - Refinement Prompt B (Planning-level cognitive mismatch repair)
@@ -28,7 +28,7 @@ SYSTEM_DESIGNER_PERSONA = (
 SYSTEM_GENERATOR_PERSONA = (
     "Anda adalah generator soal evaluasi untuk siswa Sekolah Dasar (SD). "
     "Aturan: (1) Gunakan Bahasa Indonesia sederhana dan ramah anak. (2) Respons HARUS format JSON valid tanpa markdown code block. "
-    "(3) Soal harus sepenuhnya didukung CONTEXT."
+    "(3) Soal, jawaban ideal, dan penjelasan harus sepenuhnya didukung CONTEXT."
 )
 
 SYSTEM_JUDGE_PERSONA = (
@@ -134,14 +134,13 @@ Tentukan:
 2. question_type (pilih sesuai recommended_question_format: isian_singkat / esai_pendek / esai)
 3. question_intent (apa yang ingin diukur dari siswa)
 4. grounding_evidence (WAJIB kutipan kalimat persis dari CONTEXT/testable_content, bukan parafrase)
-5. expected_answer_elements (poin-poin kunci yang wajib ada dalam jawaban ideal)
+5. expected_answer_summary (ringkasan inti jawaban ideal yang diharapkan)
 6. answer_scope (batasan panjang/kedalaman jawaban, sesuaikan usia SD)
-7. scoring_criteria (kriteria kasar untuk menilai jawaban, disempurnakan di Stage 4)
 
 Ketentuan:
 1. Pertanyaan harus dapat dijawab sepenuhnya dari CONTEXT, tidak boleh membutuhkan pengetahuan di luar itu.
 2. question_type dan struktur soal harus konsisten dengan cognitive_operation pada COGNITIVE PLAN.
-3. Untuk target C3-C4, expected_answer_elements TIDAK BOLEH bisa dijawab hanya dengan mengutip satu kalimat definisi.
+3. Untuk target C3-C4, expected_answer_summary TIDAK BOLEH bisa dijawab hanya dengan mengutip satu kalimat definisi.
 4. grounding_evidence harus dapat ditelusuri kembali ke CONTEXT kata per kata.
 
 OUTPUT JSON:
@@ -150,13 +149,12 @@ OUTPUT JSON:
   "question_type": "...",
   "question_intent": "...",
   "grounding_evidence": "...",
-  "expected_answer_elements": ["..."],
-  "answer_scope": "...",
-  "scoring_criteria": ["..."]
+  "expected_answer_summary": "...",
+  "answer_scope": "..."
 }}
 """
 
-STAGE4_QUESTION_GENERATION_PROMPT = """Buat SATU pertanyaan {question_type} beserta jawaban ideal dan rubrik penilaiannya, mengikuti QUESTION BLUEPRINT.
+STAGE4_QUESTION_GENERATION_PROMPT = """Buat SATU pertanyaan {question_type} beserta jawaban ideal dan penjelasan konteks materinya, mengikuti QUESTION BLUEPRINT.
 
 Gunakan:
 
@@ -176,7 +174,7 @@ Ketentuan:
 4. Hindari kalimat bermakna ganda atau pertanyaan dengan banyak interpretasi.
 5. Jangan menyebutkan kata "Bloom", nama level kognitif, atau nomor bab di dalam teks pertanyaan.
 6. expected_answer harus 100% bersumber dari CONTEXT.
-7. rubric harus punya minimal 3 tingkat skor (misal: skor 0, 1, 2), disusun berdasarkan expected_answer_elements pada blueprint.
+7. explanation harus memberikan penjelasan ringkas dan edukatif mengenai konteks materi mengapa jawaban tersebut benar.
 
 OUTPUT JSON:
 {{
@@ -186,18 +184,11 @@ OUTPUT JSON:
   "knowledge_point": "...",
   "grounding_evidence": "...",
   "expected_answer": "...",
-  "answer_elements": [
-    {{"element": "...", "weight": 1}}
-  ],
-  "rubric": [
-    {{"score": 0, "criteria": "..."}},
-    {{"score": 1, "criteria": "..."}},
-    {{"score": 2, "criteria": "..."}}
-  ]
+  "explanation": "..."
 }}
 """
 
-LLM_JUDGE_PROMPT = """Evaluasi paket soal berikut secara bersamaan — question, expected_answer, dan rubric adalah satu kesatuan yang harus dinilai bersama, bukan terpisah.
+LLM_JUDGE_PROMPT = """Evaluasi paket soal berikut secara bersamaan — question, expected_answer, dan explanation adalah satu kesatuan yang harus dinilai bersama.
 
 CONTEXT:
 {retrieved_context}
@@ -211,8 +202,8 @@ QUESTION:
 EXPECTED ANSWER:
 {expected_answer}
 
-RUBRIC:
-{rubric}
+EXPLANATION:
+{explanation}
 
 TARGET BLOOM:
 {target_bloom_level}
@@ -222,8 +213,7 @@ Evaluasi aspek berikut:
 2. bloom_adherence — level kognitif apa yang SEBENARNYA dituntut pertanyaan ini (deteksi ulang dari nol, jangan percaya label sistem), apakah cocok dengan TARGET BLOOM?
 3. bahasa — apakah bahasa sesuai usia SD (sederhana, tidak ambigu)?
 4. answerability — apakah pertanyaan dapat dijawab hanya dari CONTEXT?
-5. answer_alignment — apakah expected_answer benar-benar menjawab question?
-6. rubric_alignment — apakah rubric konsisten dengan expected_answer?
+5. answer_alignment — apakah expected_answer & explanation benar-benar menjawab question secara akurat?
 
 Ketentuan:
 1. detected_level HARUS ditentukan secara independen, jangan hanya menyalin TARGET BLOOM.
@@ -239,8 +229,7 @@ OUTPUT JSON:
   "bloom_adherence": {{"status": "pass", "detected_level": "...", "feedback": "Sesuai target bloom."}},
   "bahasa": {{"status": "pass", "feedback": "Bahasa jelas dan cocok untuk SD."}},
   "answerability": {{"status": "pass", "feedback": "Dapat dijawab dari konteks."}},
-  "answer_alignment": {{"status": "pass", "feedback": "Jawaban relevan dengan pertanyaan."}},
-  "rubric_alignment": {{"status": "pass", "feedback": "Rubrik konsisten dengan jawaban."}},
+  "answer_alignment": {{"status": "pass", "feedback": "Jawaban dan penjelasan relevan dengan pertanyaan."}},
   "overall": "pass",
   "failed_stage": "none"
 }}
@@ -254,8 +243,8 @@ QUESTION SAAT INI:
 EXPECTED ANSWER SAAT INI:
 {expected_answer}
 
-RUBRIC SAAT INI:
-{rubric}
+EXPLANATION SAAT INI:
+{explanation}
 
 QUESTION BLUEPRINT (acuan asli, jangan diubah):
 {question_blueprint}
@@ -269,7 +258,7 @@ FEEDBACK VALIDATOR:
 Ketentuan:
 1. Jika grounding gagal -> ganti bagian yang tidak didukung CONTEXT, gunakan ulang grounding_evidence dari blueprint.
 2. Jika bahasa/ambiguity gagal -> sederhanakan kalimat, hilangkan makna ganda.
-3. Jika answer_alignment/rubric_alignment gagal -> sesuaikan expected_answer dan rubric agar konsisten dengan question.
+3. Jika answer_alignment gagal -> sesuaikan expected_answer dan explanation agar konsisten dengan question.
 4. Jangan menambahkan informasi dari luar CONTEXT.
 5. Pertahankan question_type dan cognitive_level yang sama.
 
@@ -281,14 +270,7 @@ OUTPUT JSON:
   "knowledge_point": "...",
   "grounding_evidence": "...",
   "expected_answer": "...",
-  "answer_elements": [
-    {{"element": "...", "weight": 1}}
-  ],
-  "rubric": [
-    {{"score": 0, "criteria": "..."}},
-    {{"score": 1, "criteria": "..."}},
-    {{"score": 2, "criteria": "..."}}
-  ]
+  "explanation": "..."
 }}
 """
 

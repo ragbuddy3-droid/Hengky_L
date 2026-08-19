@@ -18,10 +18,6 @@ def validate_answer_quality(question: dict[str, Any]) -> list[str]:
     if q_type in ("esai", "esai_pendek") and word_count < 5:
         issues.append(f"Jawaban esai terlalu pendek ({word_count} kata, min 5)")
 
-    rubric = question.get("rubric", [])
-    if isinstance(rubric, list) and len(rubric) < 3:
-        issues.append(f"Rubrik hanya {len(rubric)} tingkat, minimum 3")
-
     q_text = question.get("question", "")
     if q_text and not q_text.strip().endswith(("?", "!")):
         issues.append("Pertanyaan tidak diakhiri tanda tanya atau seru")

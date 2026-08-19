@@ -281,9 +281,8 @@ def run_stage3_question_blueprint(
             "question_type": cognitive_plan.recommended_question_format or "esai",
             "question_intent": cognitive_plan.student_task or "Menguji pemahaman materi",
             "grounding_evidence": quote,
-            "expected_answer_elements": [quote],
-            "answer_scope": "1-2 kalimat sederhana",
-            "scoring_criteria": ["Tepat dan sesuai teks materi"]
+            "expected_answer_summary": quote,
+            "answer_scope": "1-2 kalimat sederhana"
         }
         parsed_obj = QuestionBlueprint.model_validate(parsed_dict)
 
@@ -312,7 +311,7 @@ def run_stage4_question_generation(
     few_shot_examples: str = "Tidak ada contoh tambahan.",
     attempt: int = 1
 ) -> tuple[QuestionPackage, PromptStageTrace]:
-    """Stage 4: Execute Question Generation Prompt (Question + Answer + Rubric)."""
+    """Stage 4: Execute Question Generation Prompt (Question + Answer + Explanation)."""
     prompt_text = STAGE4_QUESTION_GENERATION_PROMPT.format(
         retrieved_context=retrieved_context,
         question_blueprint=json.dumps(blueprint.model_dump(), ensure_ascii=False),
@@ -345,12 +344,7 @@ def run_stage4_question_generation(
             "knowledge_point": blueprint.knowledge_point,
             "grounding_evidence": blueprint.grounding_evidence,
             "expected_answer": blueprint.grounding_evidence or "Jawaban sesuai materi buku.",
-            "answer_elements": [{"element": "Penjelasan sesuai materi", "weight": 1}],
-            "rubric": [
-                {"score": 0, "criteria": "Jawaban salah atau tidak menjawab."},
-                {"score": 1, "criteria": "Menyebutkan sebagian konsep dengan benar."},
-                {"score": 2, "criteria": "Menjelaskan konsep secara lengkap dan tepat."}
-            ]
+            "explanation": f"Materi ini merujuk pada konsep '{blueprint.knowledge_point}' dalam buku."
         }
         parsed_obj = QuestionPackage.model_validate(parsed_dict)
 
@@ -376,19 +370,17 @@ def run_llm_judge(
     grounding_evidence: str,
     question: str,
     expected_answer: str,
-    rubric: Any,
+    explanation: str,
     target_bloom_level: str,
     attempt: int = 1
 ) -> tuple[JudgeEvaluationResult, PromptStageTrace]:
-    """Layer 2: Execute LLM-as-Judge Evaluation."""
-    rubric_str = json.dumps(rubric, ensure_ascii=False) if isinstance(rubric, (list, dict)) else str(rubric)
-
+    """Layer 2: Execute LLM-as-Judge Evaluation (Streamlined: Question + Answer + Explanation)."""
     prompt_text = LLM_JUDGE_PROMPT.format(
         retrieved_context=retrieved_context[:2000],
         grounding_evidence=grounding_evidence or "Teks konteks buku",
         question=question,
         expected_answer=expected_answer,
-        rubric=rubric_str,
+        explanation=explanation or f"Berdasarkan materi '{grounding_evidence}'.",
         target_bloom_level=target_bloom_level
     )
 
@@ -415,7 +407,6 @@ def run_llm_judge(
             bahasa=JudgeAspectResult(status="pass", feedback="Bahasa sesuai."),
             answerability=JudgeAspectResult(status="pass", feedback="Dapat dijawab."),
             answer_alignment=JudgeAspectResult(status="pass", feedback="Sesuai."),
-            rubric_alignment=JudgeAspectResult(status="pass", feedback="Rubrik sesuai."),
             overall="pass",
             failed_stage="none"
         )
@@ -440,7 +431,7 @@ def run_refinement_a(
     chat_model: Any,
     question: str,
     expected_answer: str,
-    rubric: Any,
+    explanation: str,
     blueprint: QuestionBlueprint,
     retrieved_context: str,
     validation_feedback: str,
@@ -449,12 +440,10 @@ def run_refinement_a(
     attempt: int = 2
 ) -> tuple[QuestionPackage, PromptStageTrace]:
     """Refinement Prompt A (Generation-level repair, Stage 4 re-entry)."""
-    rubric_str = json.dumps(rubric, ensure_ascii=False) if isinstance(rubric, (list, dict)) else str(rubric)
-
     prompt_text = REFINEMENT_PROMPT_A.format(
         question=question,
         expected_answer=expected_answer,
-        rubric=rubric_str,
+        explanation=explanation or "Penjelasan sesuai materi.",
         question_blueprint=json.dumps(blueprint.model_dump(), ensure_ascii=False),
         retrieved_context=retrieved_context,
         validation_feedback=validation_feedback,
@@ -486,7 +475,7 @@ def run_refinement_a(
             knowledge_point=blueprint.knowledge_point,
             grounding_evidence=blueprint.grounding_evidence,
             expected_answer=expected_answer,
-            rubric=[]
+            explanation=explanation or "Penjelasan sesuai materi."
         )
 
     latency = int((time.time() - t0) * 1000)
