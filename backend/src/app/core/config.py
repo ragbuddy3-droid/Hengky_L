@@ -1,14 +1,32 @@
-"""Configuration management for RAG-AQG strictly from YAML (No .env)."""
+"""Configuration management for RAG-AQG with YAML settings and .env secrets."""
 
 import logging
 import os
 from functools import lru_cache
 from typing import Any
 
+import dotenv
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 logger = logging.getLogger(__name__)
+
+
+def load_environment_variables() -> None:
+    """Load environment variables from .env file."""
+    candidates = [
+        ".env",
+        "backend/.env",
+        os.path.join(os.path.dirname(__file__), "../../../.env"),
+        os.path.join(os.path.dirname(__file__), "../../.env"),
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            dotenv.load_dotenv(dotenv_path=os.path.abspath(c), override=False)
+            logger.info("Loaded .env from: %s", os.path.abspath(c))
+            break
+    else:
+        dotenv.load_dotenv()
 
 
 def find_yaml_config() -> str:
@@ -37,29 +55,28 @@ class AppConfig(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    provider: str = "openrouter"
-    groq_api_key: str | None = None
-    ollama_base_url: str = "http://localhost:11434"
-    openrouter_api_key: str | None = None
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    generator_model: str = "google/gemma-4-31b-it:free"
-    judge_model: str = "google/gemma-4-31b-it:free"
+    provider: str = "deepinfra"
+    deepinfra_api_key: str | None = None
+    deepinfra_base_url: str = "https://api.deepinfra.com/v1/openai"
+    generator_model: str = "Qwen/Qwen3-32B"
+    judge_model: str = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
     embedding_model: str = "BAAI/bge-m3"
+    max_tokens: int = 4096
 
-    @field_validator("openrouter_api_key", "groq_api_key", mode="before")
+    @field_validator("deepinfra_api_key", mode="before")
     @classmethod
     def resolve_env_var(cls, v: Any) -> Any:
-        """Resolve ${ENV_VAR} placeholders to actual environment variable values or fallback."""
-        if isinstance(v, str) and v.startswith("${") and v.endswith("}"):
-            env_name = v[2:-1]
-            return os.environ.get(env_name)
+        """Resolve API token strictly from environment (.env) if omitted or placeholder."""
+        if not v or (isinstance(v, str) and v.startswith("${") and v.endswith("}")):
+            return os.environ.get("DEEPINFRA_API_KEY") or os.environ.get("DEEPINFRA_TOKEN")
         return v
 
 
 
 class ValidationConfig(BaseModel):
+    fast_reject_threshold: float = 0.40
     grounding_threshold: float = 0.50
-    grounding_auto_pass_threshold: float = 0.80
+    grounding_auto_pass_threshold: float = 0.80  # Deprecated backward compatibility
     max_refinement_attempts: int = 3
 
 
@@ -70,11 +87,17 @@ class DatabaseConfig(BaseModel):
 
 class RetrievalConfig(BaseModel):
     top_k: int = 5
+    candidate_top_k: int = 15
     hybrid_dense_weight: float = 0.6
     hybrid_sparse_weight: float = 0.4
+    reranker_enabled: bool = True
 
 
 class ChunkingConfig(BaseModel):
+    strategy: str = "section_aware"
+    target_words_min: int = 250
+    target_words_max: int = 450
+    overlap_sentences: int = 2
     fixed_chunk_size: int = 1000
     fixed_chunk_overlap: int = 150
     semantic_breakpoint_type: str = "percentile"
@@ -115,21 +138,12 @@ class Settings(BaseModel):
         return self.llm.provider
 
     @property
-    def GROQ_API_KEY(self) -> str | None:
-        return self.llm.groq_api_key
+    def DEEPINFRA_API_KEY(self) -> str | None:
+        return self.llm.deepinfra_api_key or os.environ.get("DEEPINFRA_API_KEY") or os.environ.get("DEEPINFRA_TOKEN")
 
     @property
-    def OLLAMA_BASE_URL(self) -> str:
-        return self.llm.ollama_base_url
-
-    @property
-    def OPENROUTER_API_KEY(self) -> str | None:
-        return self.llm.openrouter_api_key
-
-    @property
-    def OPENROUTER_BASE_URL(self) -> str:
-        return self.llm.openrouter_base_url
-
+    def DEEPINFRA_BASE_URL(self) -> str:
+        return self.llm.deepinfra_base_url
 
     @property
     def LLM_GENERATOR_MODEL(self) -> str:
@@ -142,6 +156,14 @@ class Settings(BaseModel):
     @property
     def EMBEDDING_MODEL(self) -> str:
         return self.llm.embedding_model
+
+    @property
+    def MAX_TOKENS(self) -> int:
+        return self.llm.max_tokens
+
+    @property
+    def FAST_REJECT_THRESHOLD(self) -> float:
+        return self.validation.fast_reject_threshold
 
     @property
     def GROUNDING_THRESHOLD(self) -> float:
@@ -168,6 +190,14 @@ class Settings(BaseModel):
         return self.retrieval.top_k
 
     @property
+    def CANDIDATE_TOP_K(self) -> int:
+        return self.retrieval.candidate_top_k
+
+    @property
+    def RERANKER_ENABLED(self) -> bool:
+        return self.retrieval.reranker_enabled
+
+    @property
     def HYBRID_DENSE_WEIGHT(self) -> float:
         return self.retrieval.hybrid_dense_weight
 
@@ -177,17 +207,17 @@ class Settings(BaseModel):
 
     @classmethod
     def load_from_yaml(cls, yaml_path: str | None = None) -> "Settings":
-        """Load and parse settings strictly from the central YAML configuration file."""
+        """Load and parse settings from YAML and environment (.env)."""
+        load_environment_variables()
         path = yaml_path or find_yaml_config()
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
-
 
         if not data or not isinstance(data, dict):
             raise ValueError(f"YAML config file at {path} is empty or invalid.")
 
         settings = cls.model_validate(data)
-        logger.info("Successfully loaded configuration strictly from YAML: %s", path)
+        logger.info("Successfully loaded configuration from YAML: %s (Provider: %s)", path, settings.llm.provider)
         return settings
 
 

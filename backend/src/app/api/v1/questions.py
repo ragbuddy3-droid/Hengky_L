@@ -62,6 +62,9 @@ def get_question(question_id: str):
                                     category=chk.category,
                                     section_heading=chk.section_heading,
                                     chapter=chk.chapter,
+                                    page_number=getattr(chk, "page_number", 1) or 1,
+                                    chunk_index=getattr(chk, "chunk_index", 0) or 0,
+                                    section_type=getattr(chk, "section_type", "materi_pokok") or "materi_pokok",
                                 )
                             )
             except (json.JSONDecodeError, TypeError) as exc:

@@ -18,13 +18,13 @@ export default function HomePage() {
         <Group justify="space-between" align="flex-start">
           <Box style={{ maxWidth: '650px' }}>
             <Badge color="blue" variant="filled" size="lg" mb="xs">
-              Platform Generation Soal Otomatis
+              Platform Generasi Soal Otomatis Berbasis RAG
             </Badge>
             <Title order={1} style={{ letterSpacing: '-0.5px' }} mb="xs">
-              RAG-AQG (v3.0)
+              RAG-AQG (v4.0)
             </Title>
             <Text c="dimmed" size="lg" mb="md">
-              Sistem berbasis AI yang mengubah buku digital (PDF) menjadi soal pilihan ganda berkualitas tinggi dengan Taksonomi Bloom dan validasi otomatis 2-layer.
+              Sistem AI cerdas yang mengubah buku digital (PDF) menjadi soal evaluasi esai & isian singkat (C1–C4 SD) berkualitas tinggi dengan Section-Aware Chunking, High-Precision Retrieval, dan Validasi 2-Layer.
             </Text>
             <Group gap="sm">
               <Button component={Link} href="/documents" leftSection={<IconBook size={18} />} size="md" radius="md">
@@ -52,7 +52,7 @@ export default function HomePage() {
             1. Manajemen Dokumen
           </Text>
           <Text size="sm" c="dimmed" mb="lg">
-            Unggah file PDF materi pelajaran (PJOK, IPAS, PKN). Sistem akan mengekstrak teks, memilah bab, dan membuat chunking pedagogis otomatis (PAC).
+            Unggah file PDF materi pelajaran. Sistem mengekstrak teks berbasis halaman, memilah struktur bab & heading, serta memotong materi secara Section-Aware.
           </Text>
           <Button component={Link} href="/documents" variant="light" rightSection={<IconArrowRight size={16} />} fullWidth radius="md">
             Buka Dokumen
@@ -67,7 +67,7 @@ export default function HomePage() {
             2. AQG Chatbot
           </Text>
           <Text size="sm" c="dimmed" mb="lg">
-            Berinteraksi langsung dengan chatbot RAG. Minta pembuat soal berdasarkan bab atau level Taksonomi Bloom tertentu secara gratis halusinasi.
+            Berinteraksi langsung dengan chatbot RAG. Minta pembuatan soal evaluasi berdasarkan bab materi dan target kognitif Bloom C1–C4 jenjang SD.
           </Text>
           <Button component={Link} href="/chat" variant="light" color="cyan" rightSection={<IconArrowRight size={16} />} fullWidth radius="md">
             Buka Chatbot
@@ -82,7 +82,7 @@ export default function HomePage() {
             3. Bank & Audit Soal
           </Text>
           <Text size="sm" c="dimmed" mb="lg">
-            Lihat daftar soal yang telah dihasilkan, kunci jawaban, penjelasan, serta riwayat audit validasi (Grounding Score & LLM-as-Judge).
+            Tinjau paket soal esai & isian singkat, kunci jawaban, penjelasan edukatif, rubrik penskoran, serta audit jejak 4 tahap generasi dan validasi.
           </Text>
           <Button component={Link} href="/questions" variant="light" color="teal" rightSection={<IconArrowRight size={16} />} fullWidth radius="md">
             Lihat Bank Soal
@@ -92,7 +92,7 @@ export default function HomePage() {
 
       <Paper p="lg" radius="md" withBorder mt="md">
         <Title order={4} mb="sm">
-          Alur Validasi Dua-Lapis (2-Layer Self-Refinement)
+          Alur Validasi Dua-Lapis (2-Layer Guardrails)
         </Title>
         <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
           <Group align="flex-start" wrap="nowrap">
@@ -101,10 +101,10 @@ export default function HomePage() {
             </ThemeIcon>
             <Box>
               <Text fw={600} size="sm">
-                Lapis 1: Cosine Similarity Grounding
+                Lapis 1: Fast-Reject Grounding Similarity
               </Text>
               <Text size="xs" c="dimmed">
-                Mengukur tingkat kesamaan vektor antara soal+jawaban dengan materi sumber (Ambatan Grounding &ge; 0.75).
+                Menyaring cepat kandidat soal dengan kemiripan vektor embedding rendah (&lt; 0.40) untuk direvisi langsung tanpa memboroskan token juri.
               </Text>
             </Box>
           </Group>
@@ -115,10 +115,10 @@ export default function HomePage() {
             </ThemeIcon>
             <Box>
               <Text fw={600} size="sm">
-                Lapis 2: Rubrik Pedagogis LLM-as-Judge
+                Lapis 2: LLM-as-Judge 5 Aspek Pedagogis SD
               </Text>
               <Text size="xs" c="dimmed">
-                Mengevaluasi kejelasan pertanyaan, kebenaran kunci jawaban, kelayakan opsi pengecoh, dan Taksonomi Bloom.
+                Mengevaluasi kesesuaian Bloom C1–C4, stimulus skenario kontekstual nyata, bahasa ramah anak SD, keterjawaban materi, dan keselarasan jawaban.
               </Text>
             </Box>
           </Group>

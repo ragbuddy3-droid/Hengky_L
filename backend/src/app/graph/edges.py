@@ -21,7 +21,7 @@ def route_after_generation(state: AQGState) -> str:
 
 
 def route_after_grounding(state: AQGState) -> str:
-    """Route question based on Layer 1 Grounding Validation result."""
+    """Route question based on Layer 1 Fast-Reject Grounding Validation result."""
     logs = state.get("validation_logs", [])
     if not logs:
         return "self_refinement"
@@ -31,17 +31,14 @@ def route_after_grounding(state: AQGState) -> str:
     attempt = state.get("current_attempt", 1)
     max_attempts = state.get("max_attempts", 3)
 
-    if verdict == "auto_pass":
-        logger.info("[Edge] Grounding auto-pass -> persist_questions")
-        return "persist_questions"
-    elif verdict == "pass":
-        logger.info("[Edge] Grounding pass -> llm_judge_evaluation")
+    if verdict == "pass":
+        logger.info("[Edge] Grounding passed Fast-Reject -> llm_judge_evaluation")
         return "llm_judge_evaluation"
     else:
         if attempt >= max_attempts:
-            logger.info("[Edge] Grounding fail and attempts exhausted (%d/%d) -> persist_questions", attempt, max_attempts)
+            logger.info("[Edge] Grounding Fast-Reject and attempts exhausted (%d/%d) -> persist_questions", attempt, max_attempts)
             return "persist_questions"
-        logger.info("[Edge] Grounding fail -> self_refinement")
+        logger.info("[Edge] Grounding Fast-Reject -> self_refinement")
         return "self_refinement"
 
 

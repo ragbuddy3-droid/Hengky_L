@@ -189,7 +189,7 @@ def run_stage2_cognitive_planning(
 
     prompt_text = STAGE2_COGNITIVE_PLANNING_PROMPT.format(
         target_bloom_level=clean_bloom,
-        content_analysis=json.dumps(content_analysis.model_dump(), ensure_ascii=False)
+        content_analysis=_compact_content_analysis(content_analysis)
     )
 
     t0 = time.time()
@@ -399,16 +399,16 @@ def run_llm_judge(
         parsed_obj = JudgeEvaluationResult.model_validate(parsed_dict)
     except Exception as e:
         logger.error("[LLM Judge Runner] Error: %s", e)
-        status = "fallback"
+        status = "error"
         err_msg = str(e)
         parsed_obj = JudgeEvaluationResult(
-            grounding=JudgeAspectResult(status="pass", feedback="Evaluasi default."),
-            bloom_adherence=JudgeAspectResult(status="pass", detected_level=target_bloom_level, feedback="Sesuai."),
-            bahasa=JudgeAspectResult(status="pass", feedback="Bahasa sesuai."),
-            answerability=JudgeAspectResult(status="pass", feedback="Dapat dijawab."),
-            answer_alignment=JudgeAspectResult(status="pass", feedback="Sesuai."),
-            overall="pass",
-            failed_stage="none"
+            grounding=JudgeAspectResult(status="fail", feedback=f"Evaluasi gagal: {e}"),
+            bloom_adherence=JudgeAspectResult(status="fail", detected_level="unknown", feedback="Evaluasi gagal."),
+            bahasa=JudgeAspectResult(status="fail", feedback="Evaluasi gagal."),
+            answerability=JudgeAspectResult(status="fail", feedback="Evaluasi gagal."),
+            answer_alignment=JudgeAspectResult(status="fail", feedback="Evaluasi gagal."),
+            overall="fail",
+            failed_stage="generation"
         )
 
     latency = int((time.time() - t0) * 1000)

@@ -141,6 +141,64 @@ def init_db() -> None:
                         conn.execute(text("ALTER TABLE questions ADD COLUMN quality_warnings TEXT;"))
                         conn.commit()
 
+                # Migration for chunks table
+                res_chunks = conn.execute(text("PRAGMA table_info(chunks);")).fetchall()
+                existing_chunk_cols = {row[1] for row in res_chunks}
+                if existing_chunk_cols:
+                    if "page_number" not in existing_chunk_cols:
+                        logger.info("Migrating database: adding page_number column to chunks table")
+                        conn.execute(text("ALTER TABLE chunks ADD COLUMN page_number INTEGER;"))
+                        conn.commit()
+
+                    if "chunk_index" not in existing_chunk_cols:
+                        logger.info("Migrating database: adding chunk_index column to chunks table")
+                        conn.execute(text("ALTER TABLE chunks ADD COLUMN chunk_index INTEGER;"))
+                        conn.commit()
+
+                    if "category" not in existing_chunk_cols:
+                        logger.info("Migrating database: adding category column to chunks table")
+                        conn.execute(text("ALTER TABLE chunks ADD COLUMN category VARCHAR DEFAULT 'materi_pokok';"))
+                        conn.commit()
+
+                    if "section_type" not in existing_chunk_cols:
+                        logger.info("Migrating database: adding section_type column to chunks table")
+                        conn.execute(text("ALTER TABLE chunks ADD COLUMN section_type VARCHAR DEFAULT 'materi_pokok';"))
+                        conn.commit()
+
+                    if "section_heading" not in existing_chunk_cols:
+                        logger.info("Migrating database: adding section_heading column to chunks table")
+                        conn.execute(text("ALTER TABLE chunks ADD COLUMN section_heading VARCHAR;"))
+                        conn.commit()
+
+                    if "chapter" not in existing_chunk_cols:
+                        logger.info("Migrating database: adding chapter column to chunks table")
+                        conn.execute(text("ALTER TABLE chunks ADD COLUMN chapter VARCHAR;"))
+                        conn.commit()
+
+                    if "embedding_ref" not in existing_chunk_cols:
+                        logger.info("Migrating database: adding embedding_ref column to chunks table")
+                        conn.execute(text("ALTER TABLE chunks ADD COLUMN embedding_ref VARCHAR;"))
+                        conn.commit()
+
+                # Migration for documents table
+                res_docs = conn.execute(text("PRAGMA table_info(documents);")).fetchall()
+                existing_doc_cols = {row[1] for row in res_docs}
+                if existing_doc_cols:
+                    if "chunking_strategy" not in existing_doc_cols:
+                        logger.info("Migrating database: adding chunking_strategy column to documents table")
+                        conn.execute(text("ALTER TABLE documents ADD COLUMN chunking_strategy VARCHAR DEFAULT 'fixed';"))
+                        conn.commit()
+
+                    if "filepath" not in existing_doc_cols:
+                        logger.info("Migrating database: adding filepath column to documents table")
+                        conn.execute(text("ALTER TABLE documents ADD COLUMN filepath VARCHAR;"))
+                        conn.commit()
+
+                    if "error_message" not in existing_doc_cols:
+                        logger.info("Migrating database: adding error_message column to documents table")
+                        conn.execute(text("ALTER TABLE documents ADD COLUMN error_message TEXT;"))
+                        conn.commit()
+
                 # Migration for validation_logs table
                 res_val = conn.execute(text("PRAGMA table_info(validation_logs);")).fetchall()
                 existing_val_cols = {row[1] for row in res_val}

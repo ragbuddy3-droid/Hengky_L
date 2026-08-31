@@ -7,6 +7,15 @@ from typing import Any
 
 from rank_bm25 import BM25Okapi
 
+# Standard Indonesian stopwords to filter out non-discriminative filler terms from BM25
+INDONESIAN_STOPWORDS = {
+    "yang", "di", "dari", "pada", "untuk", "dan", "atau", "adalah", "yaitu", "ini", "itu",
+    "dengan", "dalam", "ke", "oleh", "sebagai", "akan", "telah", "sudah", "dapat", "bisa",
+    "kalian", "kamu", "kita", "mereka", "dia", "ia", "secara", "karena", "sehingga",
+    "tersebut", "tentang", "juga", "saja", "ada", "tidak", "bukan", "hanya", "bagi",
+    "antara", "saat", "ketika", "kemudian", "lalu", "lebih", "sangat", "hal", "suatu",
+}
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,11 +28,15 @@ class SparseIndex:
         self._punct_table = str.maketrans("", "", string.punctuation)
 
     def tokenize(self, text: str) -> list[str]:
-        """Tokenize text into lowercase words stripped of punctuation."""
+        """Tokenize text into lowercase words stripped of punctuation and stopwords."""
         if not text:
             return []
         cleaned = text.translate(self._punct_table).lower()
-        tokens = [t.strip() for t in re.split(r'\s+', cleaned) if len(t.strip()) > 1]
+        tokens = [
+            t.strip()
+            for t in re.split(r'\s+', cleaned)
+            if len(t.strip()) > 1 and t.strip() not in INDONESIAN_STOPWORDS
+        ]
         return tokens
 
     def build_index(self, chunks: list[dict[str, Any]]) -> None:

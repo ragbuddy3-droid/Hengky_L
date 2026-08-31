@@ -36,7 +36,7 @@ def delete_chat_session(db: Session, session_id: str) -> bool:
     session = get_chat_session(db, session_id)
     if session:
         db.delete(session)
-        db.commit()
+        db.flush()
         logger.info("Deleted ChatSession id='%s'", session_id)
         return True
     return False

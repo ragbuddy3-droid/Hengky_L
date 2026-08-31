@@ -31,7 +31,7 @@ export const api = {
     return handleResponse<Document>(res);
   },
 
-  async uploadDocument(file: File, subject: string, chunkingStrategy: string = 'fixed'): Promise<DocumentUploadResponse> {
+  async uploadDocument(file: File, subject: string, chunkingStrategy: string = 'section_aware'): Promise<DocumentUploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('subject', subject);

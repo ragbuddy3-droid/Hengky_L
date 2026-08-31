@@ -345,11 +345,11 @@ function ChatContent() {
               <Chip size="xs" variant="outline" onClick={() => setPromptSuggestion('Buatkan 5 soal esai C4 bab 2')}>
                 Buatkan 5 soal esai C4 bab 2
               </Chip>
-              <Chip size="xs" variant="outline" onClick={() => setPromptSuggestion('Buatkan 3 soal isian singkat bab 1')}>
-                Buatkan 3 soal isian singkat bab 1
+              <Chip size="xs" variant="outline" onClick={() => setPromptSuggestion('Buatkan 3 soal isian singkat C2 bab 1')}>
+                Buatkan 3 soal isian singkat C2 bab 1
               </Chip>
-              <Chip size="xs" variant="outline" onClick={() => setPromptSuggestion('Buatkan 4 soal esai C5')}>
-                Buatkan 4 soal esai C5
+              <Chip size="xs" variant="outline" onClick={() => setPromptSuggestion('Buatkan 4 soal esai C3 bab 3')}>
+                Buatkan 4 soal esai C3 bab 3
               </Chip>
             </Group>
 

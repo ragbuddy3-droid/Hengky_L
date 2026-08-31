@@ -42,6 +42,9 @@ export interface UsedChunk {
   category: string;
   section_heading?: string;
   chapter?: string;
+  page_number?: number;
+  chunk_index?: number;
+  section_type?: string;
 }
 
 export interface Question {

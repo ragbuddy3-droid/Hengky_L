@@ -21,6 +21,9 @@ export interface DocumentChunk {
   category: string;
   section_heading?: string;
   chapter?: string;
+  page_number?: number;
+  chunk_index?: number;
+  section_type?: string;
   word_count: number;
   created_at?: string;
 }

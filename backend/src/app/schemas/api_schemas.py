@@ -79,6 +79,9 @@ class UsedChunkResponse(BaseModel):
     category: str
     section_heading: str | None = None
     chapter: str | None = None
+    page_number: int | None = None
+    chunk_index: int | None = None
+    section_type: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

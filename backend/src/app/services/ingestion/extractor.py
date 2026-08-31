@@ -3,6 +3,7 @@
 import logging
 import re
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import pdfplumber
@@ -35,18 +36,84 @@ NOISE_PATTERNS = [
     r'(?i)^Hak Cipta.*$',
     r'(?i)^Kementerian Pendidikan.*$',
     r'(?i)^ISBN\b.*$',
+    r'(?i)^Berikut tabel penilaian.*$',
+    r'(?i)^Skor maksimal\s+\d+.*$',
+    r'(?i)^Nama Kriteria Skor Paraf guru.*$',
+    r'(?i)^Aspek yang Dinilai Kriteria Skor.*$',
 ]
+
+CHAPTER_RUNNING_REGEX = re.compile(
+    r'(?i)\b(?:Bab|Unit|Tema|Modul)\s+([0-9IVXLCDM]+)\s*\|\s*([^\n\r\|0-9\.\,\:\;\!\?]{3,80})',
+    re.IGNORECASE
+)
+CHAPTER_OPENER_REGEX = re.compile(
+    r'(?i)^\s*(?:BAB|UNIT|TEMA|MODUL|CHAPTER|PEMBELAJARAN)\s+([0-9IVXLCDM]+)(?:[\s:\.\-–—]+([^\n\r\.\,\:\;\!\?]{3,80}))?$',
+    re.MULTILINE
+)
+
+
+def extract_chapter_from_raw_page(raw_text: str) -> str | None:
+    """Extract chapter identifier from raw page text or running headers."""
+    if not raw_text:
+        return None
+    norm = normalize_text_fonts(raw_text)
+
+    # 1. Check running header pattern: e.g. "Bab 5 | Energi untuk Masa Depan 139"
+    m_running = CHAPTER_RUNNING_REGEX.search(norm)
+    if m_running:
+        num = m_running.group(1).upper()
+        title = m_running.group(2).strip()
+        title = re.sub(r'\s+\d+$', '', title).strip()
+        return f"Bab {num}: {title}" if title else f"Bab {num}"
+
+    # 2. Check chapter title lines: e.g. "Bab 1: Makanan Bergizi"
+    for line in norm.split('\n')[:8]:
+        line_clean = line.strip()
+        m_open = CHAPTER_OPENER_REGEX.match(line_clean)
+        if m_open and "..." not in line_clean:
+            num = m_open.group(1).upper()
+            title = (m_open.group(2) or "").strip()
+            return f"Bab {num}: {title}" if title else f"Bab {num}"
+
+    return None
+
+
+@dataclass
+class PageContent:
+    """Represents extracted text from a specific physical PDF page."""
+    page_number: int  # 1-indexed
+    text: str
+    chapter: str | None = None
 
 
 def normalize_text_fonts(text: str) -> str:
-    """Normalize duplicated font characters commonly produced by PDF extractors (e.g. KKaattaa -> Kata)."""
+    """Normalize duplicated font characters and CID artifacts while strictly preserving line breaks."""
+    if not text:
+        return ""
+
+    # 1. Fix common CID ligature encoding issues from Kemdikbud PDFs
+    text = text.replace("(cid:1652)", "fi")
+    text = text.replace("(cid:1651)", "fl")
+    text = text.replace("(cid:1650)", "ff")
+    text = re.sub(r'\(cid:\d+\)', '', text)
+
+    # 2. Fix duplicated character sequences (e.g. KKaattaa -> Kata, EEnneerrggii -> Energi)
     def fix_word(w: str) -> str:
         if len(w) >= 4 and len(w) % 2 == 0 and all(w[i] == w[i + 1] for i in range(0, len(w) - 1, 2)):
             return w[::2]
         return w
-    words = text.split()
-    fixed_words = [fix_word(w) for w in words]
-    return " ".join(fixed_words)
+
+    # Preserve line structure
+    lines = text.split('\n')
+    fixed_lines = []
+    for line in lines:
+        words = line.split()
+        if not words:
+            fixed_lines.append("")
+            continue
+        fixed_words = [fix_word(w) for w in words]
+        fixed_lines.append(" ".join(fixed_words))
+    return "\n".join(fixed_lines)
 
 
 def is_roman_numeral(val: str) -> bool:
@@ -78,15 +145,16 @@ def is_front_matter_page(raw_text: str, lines: list[str], page_idx: int) -> bool
     )
 
 
-def extract_text_from_pdf(file_path: Path) -> str:
-    """Extract page text using pdfplumber (primary) with pypdf fallback, skipping front and back matter."""
-    pages_data = []
+def extract_pages_from_pdf(file_path: Path) -> list[PageContent]:
+    """Extract pages as a list of PageContent objects with front/back matter filtering and chapter tracking."""
+    pages_data: list[PageContent] = []
 
     try:
         logger.info("Using pdfplumber (primary extractor) for: %s", file_path.name)
         with pdfplumber.open(file_path) as pdf:
             page_count = len(pdf.pages)
             main_started = False
+            current_chapter: str | None = None
 
             for i, page in enumerate(pdf.pages):
                 extracted = page.extract_text() or ""
@@ -126,7 +194,14 @@ def extract_text_from_pdf(file_path: Path) -> str:
                     logger.info("Back-matter reached at Page %d, stopping page extraction.", i + 1)
                     break
 
-                pages_data.append(extracted)
+                # Track active chapter across pages
+                detected_ch = extract_chapter_from_raw_page(extracted)
+                if detected_ch:
+                    current_chapter = detected_ch
+
+                cleaned_page_text = clean_text(extracted)
+                if cleaned_page_text:
+                    pages_data.append(PageContent(page_number=i + 1, text=cleaned_page_text, chapter=current_chapter))
 
             logger.info("Extracted %d main content pages out of %d total pages", len(pages_data), page_count)
 
@@ -135,13 +210,13 @@ def extract_text_from_pdf(file_path: Path) -> str:
         reader = PdfReader(file_path)
         page_count = len(reader.pages)
         main_started = False
+        current_chapter = None
 
         for i, page in enumerate(reader.pages):
             extracted = page.extract_text() or ""
             lines = [line_str.strip() for line_str in extracted.split('\n') if line_str.strip()]
             if not lines:
                 continue
-
 
             is_bab1_start = False
             for line in lines[:5]:
@@ -156,19 +231,42 @@ def extract_text_from_pdf(file_path: Path) -> str:
                 else:
                     continue
 
-            pages_data.append(extracted)
+            # Back matter exclusion (only near tail of document)
+            is_back_matter = False
+            for line in lines[:3]:
+                line_norm = normalize_text_fonts(line.strip().lower())
+                if any(bm in line_norm for bm in BACK_MATTER_TITLES):
+                    is_back_matter = True
+                    break
+            if is_back_matter and i > page_count * 0.8:
+                logger.info("Back-matter reached at Page %d (pypdf fallback), stopping.", i + 1)
+                break
 
-    full_text = "\n".join(pages_data)
-    logger.info("Extracted main content text length: %s chars", f"{len(full_text):,}")
+            detected_ch = extract_chapter_from_raw_page(extracted)
+            if detected_ch:
+                current_chapter = detected_ch
+
+            cleaned_page_text = clean_text(extracted)
+            if cleaned_page_text:
+                pages_data.append(PageContent(page_number=i + 1, text=cleaned_page_text, chapter=current_chapter))
+
+    return pages_data
+
+
+def extract_text_from_pdf(file_path: Path) -> str:
+    """Extract full main content text from PDF."""
+    pages = extract_pages_from_pdf(file_path)
+    full_text = "\n\n".join(p.text for p in pages)
+    logger.info("Extracted main content text length: %s chars across %d pages", f"{len(full_text):,}", len(pages))
     return full_text
 
 
 def clean_text(text: str) -> str:
     """Remove noise lines, headers, footers, page numbers, and excessive whitespace."""
-    original_len = len(text)
-    logger.info("Cleaning text (input length: %s chars)", f"{original_len:,}")
-
-    lines = text.split('\n')
+    if not text:
+        return ""
+    text_norm = normalize_text_fonts(text)
+    lines = text_norm.split('\n')
     cleaned_lines = []
 
     for line in lines:
@@ -189,13 +287,8 @@ def clean_text(text: str) -> str:
 
     # Normalize whitespace
     result = re.sub(r'\n{3,}', '\n\n', result)
-    result = re.sub(r' {2,}', ' ', result)
-    result = result.strip()
-
-    cleaned_len = len(result)
-    removed_pct = ((original_len - cleaned_len) / original_len * 100) if original_len > 0 else 0
-    logger.info("Clean text length: %s chars (removed %.1f%%)", f"{cleaned_len:,}", removed_pct)
-    return result
+    result = re.sub(r'[ \t]{2,}', ' ', result)
+    return result.strip()
 
 
 def process_pdf(file_path: Path) -> str:
@@ -206,9 +299,13 @@ def process_pdf(file_path: Path) -> str:
 
     start_time = time.time()
     raw_text = extract_text_from_pdf(file_path)
-    clean = clean_text(raw_text)
     elapsed = time.time() - start_time
 
     logger.info("PDF extraction & cleaning complete in %.2fs", elapsed)
     logger.info("=" * 50)
-    return clean
+    return raw_text
+
+
+def process_pdf_pages(file_path: Path) -> list[PageContent]:
+    """Process PDF and return list of cleaned PageContent objects with page numbers."""
+    return extract_pages_from_pdf(file_path)

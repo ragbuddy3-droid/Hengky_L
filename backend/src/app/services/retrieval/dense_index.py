@@ -50,9 +50,12 @@ class DenseIndex:
         metadatas = [
             {
                 "document_id": str(c.get("metadata", {}).get("document_id") or c.get("document_id") or ""),
-                "category": str(c.get("metadata", {}).get("category") or c.get("category") or ""),
+                "category": str(c.get("metadata", {}).get("category") or c.get("category") or "materi_pokok"),
                 "chapter": str(c.get("metadata", {}).get("chapter") or c.get("chapter") or ""),
                 "section_heading": str(c.get("metadata", {}).get("section_heading") or c.get("section_heading") or ""),
+                "page_number": int(c.get("metadata", {}).get("page_number") or c.get("page_number") or 1),
+                "chunk_index": int(c.get("metadata", {}).get("chunk_index") or c.get("chunk_index") or 0),
+                "section_type": str(c.get("metadata", {}).get("section_type") or c.get("section_type") or "materi_pokok"),
             }
             for c in chunks
         ]
@@ -73,15 +76,23 @@ class DenseIndex:
 
         logger.info("Successfully indexed %d chunks in ChromaDB.", len(chunks))
 
-    def query(self, query_text: str, top_k: int = 5) -> list[dict[str, Any]]:
-        """Query ChromaDB vector store and return ranked chunks."""
+    def query(
+        self,
+        query_text: str,
+        top_k: int = 5,
+        document_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Query ChromaDB vector store with optional document_id filter and return ranked chunks."""
         if not query_text or not query_text.strip() or self.collection.count() == 0:
             return []
 
         query_emb = self._model.encode([query_text], normalize_embeddings=True).tolist()
+        where_clause = {"document_id": document_id} if document_id else None
+
         results = self.collection.query(
             query_embeddings=query_emb,
             n_results=min(top_k, self.collection.count()),
+            where=where_clause,
             include=["documents", "metadatas", "distances"]
         )
 

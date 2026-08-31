@@ -224,6 +224,7 @@ def delete_session(session_id: str):
         success = delete_chat_session(db, session_id)
         if not success:
             raise HTTPException(status_code=404, detail="Sesi chat tidak ditemukan")
+        db.commit()
         return {"status": "deleted", "session_id": session_id}
 
 

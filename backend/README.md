@@ -9,7 +9,8 @@ Sistem Backend RAG-AQG (Retrieval-Augmented Generation & Automatic Question Gene
 4. **Validasi 2-Layer**:
    - Layer 1: Cosine similarity embedding grounding score (auto-pass >= 0.80).
    - Layer 2: LLM-as-Judge evaluation untuk rubrik kesesuaian soal SD usia 6-12 tahun.
-5. **Konfigurasi Murni YAML**: Seluruh konfigurasi disimpan pada `configs/settings.yaml`.
+5. **Konfigurasi YAML + .env**: Konfigurasi aplikasi di `configs/settings.yaml` dan API token rahasia (`DEEPINFRA_API_KEY`) di `.env`.
+6. **LLM Provider**: Sepenuhnya menggunakan **DeepInfra** (Generation: `Qwen/Qwen3-32B`, LLM-as-a-Judge: `meta-llama/Llama-3.3-70B-Instruct-Turbo`) dengan output terstruktur JSON (`response_format: {"type": "json_object"}`).
 
 ## Cara Menjalankan
 ```bash

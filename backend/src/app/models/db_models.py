@@ -45,9 +45,12 @@ class Chunk(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     document_id = Column(String, ForeignKey("documents.id"), nullable=False, index=True)
     text = Column(Text, nullable=False)
-    category = Column(String, nullable=False)  # Konsep / Narasi / Instruksi / Evaluasi
+    category = Column(String, nullable=False, default="materi_pokok")  # Backward compatibility: materi_pokok / uraian_materi / dll
     section_heading = Column(String, nullable=True)
     chapter = Column(String, nullable=True)
+    page_number = Column(Integer, nullable=True)
+    chunk_index = Column(Integer, nullable=True)
+    section_type = Column(String, nullable=True, default="materi_pokok")
     embedding_ref = Column(String, nullable=True)
     created_at = Column(DateTime, default=utcnow)
 

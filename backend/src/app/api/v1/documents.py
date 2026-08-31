@@ -11,16 +11,16 @@ from app.core.database import get_session
 from app.graph.nodes import get_shared_dense_index
 from app.models.db_models import Chunk, Document
 from app.schemas.api_schemas import DocumentStatusResponse, DocumentUploadResponse
-from app.services.ingestion.extractor import process_pdf
-from app.services.ingestion.factory import chunk_text
+from app.services.ingestion.extractor import process_pdf, process_pdf_pages
+from app.services.ingestion.factory import chunk_pages, chunk_text
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
-def process_document_background(document_id: str, file_path: str, chunking_strategy: str = "fixed"):
-    """Background task to extract, chunk, and index an uploaded PDF."""
+def process_document_background(document_id: str, file_path: str, chunking_strategy: str = "section_aware"):
+    """Background task to extract, chunk, and index an uploaded PDF with page-level tracking."""
     logger.info("[Background] Starting document processing for doc_id='%s' (strategy='%s')", document_id, chunking_strategy)
     total_start = time.time()
 
@@ -33,17 +33,21 @@ def process_document_background(document_id: str, file_path: str, chunking_strat
         db.commit()
 
     try:
-        # Step 1: Text extraction & cleaning
-        logger.info("[Background] Step 1/3: Extracting text from PDF...")
+        # Step 1: Page-aware text extraction & cleaning
+        logger.info("[Background] Step 1/4: Extracting pages from PDF...")
         step_start = time.time()
-        clean_text = process_pdf(Path(file_path))
-        logger.info("[Background] Step 1/3 complete in %.2fs (length: %d chars)", time.time() - step_start, len(clean_text))
+        pages = process_pdf_pages(Path(file_path))
+        logger.info("[Background] Step 1/4 complete in %.2fs (%d pages extracted)", time.time() - step_start, len(pages))
 
-        # Step 2: Chunking
-        logger.info("[Background] Step 2/3: Chunking text (strategy='%s')...", chunking_strategy)
+        # Step 2: Section-aware Chunking
+        logger.info("[Background] Step 2/4: Chunking text (strategy='%s')...", chunking_strategy)
         step_start = time.time()
-        chunks = chunk_text(clean_text, strategy=chunking_strategy)
-        logger.info("[Background] Step 2/3 complete in %.2fs (%d chunks created)", time.time() - step_start, len(chunks))
+        if pages:
+            chunks = chunk_pages(pages, strategy=chunking_strategy)
+        else:
+            raw_text = process_pdf(Path(file_path))
+            chunks = chunk_text(raw_text, strategy=chunking_strategy)
+        logger.info("[Background] Step 2/4 complete in %.2fs (%d chunks created)", time.time() - step_start, len(chunks))
 
         # Step 3: Saving chunks to SQLite
         logger.info("[Background] Step 3/4: Saving chunks to database...")
@@ -62,6 +66,9 @@ def process_document_background(document_id: str, file_path: str, chunking_strat
                         category=c.category,
                         section_heading=c.section_heading,
                         chapter=c.chapter,
+                        page_number=getattr(c, "page_number", 1) or 1,
+                        chunk_index=getattr(c, "chunk_index", 0) or 0,
+                        section_type=getattr(c, "section_type", "materi_pokok") or "materi_pokok",
                     )
                     db.add(db_chunk)
                     saved_chunks_data.append({
@@ -71,6 +78,9 @@ def process_document_background(document_id: str, file_path: str, chunking_strat
                         "category": c.category,
                         "section_heading": c.section_heading,
                         "chapter": c.chapter,
+                        "page_number": getattr(c, "page_number", 1) or 1,
+                        "chunk_index": getattr(c, "chunk_index", 0) or 0,
+                        "section_type": getattr(c, "section_type", "materi_pokok") or "materi_pokok",
                     })
 
                 doc.status = "ready"
@@ -106,7 +116,7 @@ async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile,
     subject: str = Form(...),
-    chunking_strategy: str = Form("fixed")
+    chunking_strategy: str = Form("section_aware")
 ):
     """Upload PDF file with selected chunking strategy."""
     if not file.filename or not file.filename.lower().endswith('.pdf'):

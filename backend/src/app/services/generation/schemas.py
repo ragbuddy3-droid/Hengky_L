@@ -29,6 +29,7 @@ class CognitivePlan(BaseModel):
     cognitive_operation: str = Field(default="", description="Operasi kognitif yang ditargetkan")
     student_task: str = Field(default="", description="Tugas spesifik yang harus dilakukan siswa")
     reasoning_required: str = Field(default="", description="Penalaran yang dibutuhkan siswa")
+    stimulus_idea: str | None = Field(default=None, description="Gagasan skenario kontekstual untuk C3/C4")
     expected_evidence: str = Field(default="", description="Bukti pemahaman yang diharapkan")
     recommended_question_format: str = Field(default="esai", description="Format soal (isian_singkat / esai_pendek / esai)")
     prohibited_question_pattern: list[str] = Field(default_factory=list, description="Pola pertanyaan yang dilarang")
@@ -42,6 +43,7 @@ class QuestionBlueprint(BaseModel):
     question_type: str = Field(default="esai", description="Format soal (isian_singkat / esai)")
     question_intent: str = Field(default="", description="Tujuan/indikator pengukuran siswa")
     grounding_evidence: str = Field(default="", description="Kutipan persis dari teks buku sebagai bukti grounding")
+    stimulus_context: str | None = Field(default=None, description="Skenario/cerita kontekstual nyata untuk C3/C4")
     expected_answer_summary: str = Field(default="", description="Ringkasan inti jawaban ideal yang diharapkan")
     expected_answer_elements: list[str] = Field(default_factory=list, description="Poin-poin kunci jawaban ideal (opsional)")
     answer_scope: str = Field(default="", description="Batasan panjang dan kedalaman jawaban siswa SD")
@@ -89,7 +91,6 @@ class JudgeEvaluationResult(BaseModel):
     bahasa: JudgeAspectResult = Field(default_factory=lambda: JudgeAspectResult(status="pass"))
     answerability: JudgeAspectResult = Field(default_factory=lambda: JudgeAspectResult(status="pass"))
     answer_alignment: JudgeAspectResult = Field(default_factory=lambda: JudgeAspectResult(status="pass"))
-    rubric_alignment: JudgeAspectResult = Field(default_factory=lambda: JudgeAspectResult(status="pass"))
     overall: str = Field(default="pass", description="pass atau fail")
     failed_stage: str = Field(default="none", description="generation / planning / none")
 

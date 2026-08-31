@@ -13,7 +13,7 @@ export default function DocumentsPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<string>('IPAS');
-  const [selectedChunkingStrategy, setSelectedChunkingStrategy] = useState<string>('fixed');
+  const [selectedChunkingStrategy, setSelectedChunkingStrategy] = useState<string>('section_aware');
 
   // Chunk Drawer State
   const [selectedDocForChunks, setSelectedDocForChunks] = useState<Document | null>(null);
@@ -62,9 +62,14 @@ export default function DocumentsPage() {
     try {
       setUploading(true);
       await api.uploadDocument(file, selectedSubject, selectedChunkingStrategy);
+      const stratLabel = selectedChunkingStrategy === 'section_aware'
+        ? 'Section-Aware Chunking'
+        : selectedChunkingStrategy === 'semantic'
+        ? 'Semantic Chunking'
+        : 'Fixed Chunking';
       notifications.show({
         title: 'Upload Berhasil',
-        message: `${file.name} telah diunggah dan sedang diproses dengan strategi ${selectedChunkingStrategy === 'fixed' ? 'Fixed Chunking' : 'Semantic Chunking'}.`,
+        message: `${file.name} telah diunggah dan sedang diproses dengan strategi ${stratLabel}.`,
         color: 'green',
         icon: <IconCheck size={18} />,
       });
@@ -137,18 +142,24 @@ export default function DocumentsPage() {
   };
 
   const renderCategoryBadge = (category: string) => {
-    const catUpper = (category || '').toUpperCase();
-    switch (catUpper) {
-      case 'KONSEP':
-        return <Badge color="blue" variant="filled">KONSEP</Badge>;
-      case 'NARASI':
-        return <Badge color="teal" variant="filled">NARASI</Badge>;
-      case 'INSTRUKSI':
-        return <Badge color="orange" variant="filled">INSTRUKSI</Badge>;
-      case 'EVALUASI':
-        return <Badge color="grape" variant="filled">EVALUASI</Badge>;
+    const catLower = (category || '').toLowerCase();
+    switch (catLower) {
+      case 'materi_pokok':
+      case 'konsep':
+        return <Badge color="blue" variant="filled">Materi Pokok</Badge>;
+      case 'uraian_materi':
+      case 'narasi':
+        return <Badge color="teal" variant="filled">Uraian Materi</Badge>;
+      case 'studi_kasus':
+        return <Badge color="cyan" variant="filled">Studi Kasus</Badge>;
+      case 'aktivitas_diskusi':
+      case 'instruksi':
+        return <Badge color="orange" variant="filled">Aktivitas / Diskusi</Badge>;
+      case 'rangkuman':
+      case 'evaluasi':
+        return <Badge color="grape" variant="filled">Rangkuman</Badge>;
       default:
-        return <Badge color="gray" variant="filled">{category || 'KONSEP'}</Badge>;
+        return <Badge color="gray" variant="filled">{category || 'Materi'}</Badge>;
     }
   };
 
@@ -169,7 +180,7 @@ export default function DocumentsPage() {
         <div>
           <Title order={2}>Manajemen Dokumen Buku PDF</Title>
           <Text c="dimmed" size="sm">
-            Unggah dokumen PDF buku pelajaran yang akan dijadikan sumber materi Automatic Question Generation.
+            Unggah dokumen PDF buku pelajaran yang akan diekstrak dan diindeks secara Section-Aware untuk Automatic Question Generation.
           </Text>
         </div>
         <Button variant="light" leftSection={<IconRefresh size={16} />} onClick={fetchDocuments} loading={loading}>
@@ -191,15 +202,16 @@ export default function DocumentsPage() {
             label="Metode Chunking"
             placeholder="Pilih Strategi"
             value={selectedChunkingStrategy}
-            onChange={(val) => setSelectedChunkingStrategy(val || 'fixed')}
+            onChange={(val) => setSelectedChunkingStrategy(val || 'section_aware')}
             data={[
-              { value: 'fixed', label: 'Fixed Chunking (Rekomendasi)' },
-              { value: 'semantic', label: 'Semantic Chunking (Berbasis Makna)' },
+              { value: 'section_aware', label: 'Section-Aware Chunking (Rekomendasi)' },
+              { value: 'fixed', label: 'Fixed Chunking (Tradisional)' },
+              { value: 'semantic', label: 'Semantic Chunking' },
             ]}
-            style={{ width: '280px' }}
+            style={{ width: '320px' }}
           />
           <Text size="xs" c="dimmed" pb={8}>
-            Pilih metode pemotongan materi dokumen.
+            Metode pemotongan materi berbasis struktur bab & heading buku.
           </Text>
         </Group>
 
@@ -269,9 +281,19 @@ export default function DocumentsPage() {
                   <Table.Td>
                     <Badge
                       variant="light"
-                      color={doc.chunking_strategy === 'semantic' ? 'violet' : 'cyan'}
+                      color={
+                        doc.chunking_strategy === 'section_aware'
+                          ? 'blue'
+                          : doc.chunking_strategy === 'semantic'
+                          ? 'violet'
+                          : 'cyan'
+                      }
                     >
-                      {doc.chunking_strategy === 'semantic' ? 'Semantic Chunking' : 'Fixed Chunking'}
+                      {doc.chunking_strategy === 'section_aware'
+                        ? 'Section-Aware'
+                        : doc.chunking_strategy === 'semantic'
+                        ? 'Semantic Chunking'
+                        : 'Fixed Chunking'}
                     </Badge>
                   </Table.Td>
                   <Table.Td>{renderStatusBadge(doc.status)}</Table.Td>
@@ -340,18 +362,21 @@ export default function DocumentsPage() {
                       {chunks.length} Chunk
                     </Text>
                   </div>
-                  <Group gap="xs">
+                  <Group gap="xs" wrap="wrap">
                     <Badge color="blue" variant="light">
-                      Konsep: {chunks.filter((c) => (c.category || '').toUpperCase() === 'KONSEP').length}
+                      Materi Pokok: {chunks.filter((c) => ['materi_pokok', 'konsep'].includes((c.category || '').toLowerCase())).length}
                     </Badge>
                     <Badge color="teal" variant="light">
-                      Narasi: {chunks.filter((c) => (c.category || '').toUpperCase() === 'NARASI').length}
+                      Uraian: {chunks.filter((c) => ['uraian_materi', 'narasi'].includes((c.category || '').toLowerCase())).length}
+                    </Badge>
+                    <Badge color="cyan" variant="light">
+                      Studi Kasus: {chunks.filter((c) => (c.category || '').toLowerCase() === 'studi_kasus').length}
                     </Badge>
                     <Badge color="orange" variant="light">
-                      Instruksi: {chunks.filter((c) => (c.category || '').toUpperCase() === 'INSTRUKSI').length}
+                      Aktivitas: {chunks.filter((c) => ['aktivitas_diskusi', 'instruksi'].includes((c.category || '').toLowerCase())).length}
                     </Badge>
                     <Badge color="grape" variant="light">
-                      Evaluasi: {chunks.filter((c) => (c.category || '').toUpperCase() === 'EVALUASI').length}
+                      Rangkuman: {chunks.filter((c) => ['rangkuman', 'evaluasi'].includes((c.category || '').toLowerCase())).length}
                     </Badge>
                   </Group>
                 </Group>
@@ -373,12 +398,17 @@ export default function DocumentsPage() {
                       <Group justify="space-between" mb="xs">
                         <Group gap="xs">
                           <Badge variant="outline" color="gray" size="sm">
-                            Chunk #{index + 1}
+                            Chunk #{chunk.chunk_index !== undefined && chunk.chunk_index !== null ? chunk.chunk_index + 1 : index + 1}
                           </Badge>
+                          {chunk.page_number && (
+                            <Badge variant="filled" color="indigo" size="sm">
+                              Hal. {chunk.page_number}
+                            </Badge>
+                          )}
                           {renderCategoryBadge(chunk.category)}
                         </Group>
                         <Text size="xs" c="dimmed">
-                          {chunk.word_count} Kata ({chunk.text.length} karakter)
+                          {chunk.word_count || chunk.text.split(/\s+/).length} Kata ({chunk.text.length} karakter)
                         </Text>
                       </Group>
 

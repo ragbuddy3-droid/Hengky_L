@@ -502,7 +502,7 @@ export default function QuestionsPage() {
                                   <Accordion.Control icon={<IconScale size={18} color="var(--mantine-color-blue-6)" />}>
                                     <Group justify="space-between" wrap="nowrap">
                                       <Text size="xs" fw={600}>
-                                        Percobaan #{log.attempt_number} — {log.layer === 'grounding' ? 'Lapis 1 (Grounding Similarity)' : log.layer === 'judge' ? 'Lapis 2 (LLM-as-Judge 6 Aspek)' : 'Pre-Check Pattern'}
+                                        Percobaan #{log.attempt_number} — {log.layer === 'grounding' ? 'Lapis 1 (Fast-Reject Grounding)' : log.layer === 'judge' ? 'Lapis 2 (LLM-as-Judge 5 Aspek SD)' : 'Pre-Check Filter'}
                                       </Text>
                                       <Badge size="xs" color={log.score_or_verdict.includes('pass') ? 'green' : 'red'}>
                                         {log.score_or_verdict}
@@ -618,11 +618,19 @@ export default function QuestionsPage() {
                                 <Accordion.Control icon={<IconFileText size={18} color="var(--mantine-color-teal-6)" />}>
                                   <Group justify="space-between" wrap="nowrap">
                                     <Group gap="xs">
-                                      <Badge size="xs" color={chunk.category === 'KONSEP' ? 'blue' : chunk.category === 'NARASI' ? 'cyan' : 'gray'}>
-                                        {chunk.category || 'Materi'}
+                                      <Badge size="xs" variant="outline" color="gray">
+                                        Chunk #{chunk.chunk_index !== undefined && chunk.chunk_index !== null ? chunk.chunk_index + 1 : cIdx + 1}
+                                      </Badge>
+                                      {chunk.page_number && (
+                                        <Badge size="xs" variant="filled" color="indigo">
+                                          Hal. {chunk.page_number}
+                                        </Badge>
+                                      )}
+                                      <Badge size="xs" color={['materi_pokok', 'konsep'].includes((chunk.category || '').toLowerCase()) ? 'blue' : 'cyan'}>
+                                        {chunk.section_type || chunk.category || 'Materi'}
                                       </Badge>
                                       <Text size="xs" fw={600} lineClamp={1}>
-                                        {chunk.chapter ? `Bab ${chunk.chapter}` : ''} {chunk.section_heading ? `— ${chunk.section_heading}` : ''}
+                                        {chunk.chapter ? `${chunk.chapter}` : ''} {chunk.section_heading ? `— ${chunk.section_heading}` : ''}
                                       </Text>
                                     </Group>
                                     <Text size="xs" c="dimmed">

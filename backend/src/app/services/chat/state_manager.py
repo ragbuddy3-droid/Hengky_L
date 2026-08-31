@@ -18,14 +18,16 @@ class ChatStateManager:
         self.db = db
 
     def get_history(self, limit: int = 20) -> list[ChatMessage]:
-        """Fetch chronological message history for the session."""
-        return (
+        """Fetch the most recent messages for the session in chronological order."""
+        results = (
             self.db.query(ChatMessage)
             .filter(ChatMessage.session_id == self.session_id)
-            .order_by(ChatMessage.created_at.asc())
+            .order_by(ChatMessage.created_at.desc())
             .limit(limit)
             .all()
         )
+        results.reverse()
+        return results
 
     def add_message(self, role: str, content: str) -> ChatMessage:
         """Append a new message to the conversation."""

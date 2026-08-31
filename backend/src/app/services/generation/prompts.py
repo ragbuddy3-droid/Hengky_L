@@ -84,28 +84,24 @@ Jika {target_bloom_level} berada di luar C1-C4, kembalikan status "invalid_level
 CONTENT ANALYSIS:
 {content_analysis}
 
-Panduan operasi kognitif per level (gunakan sebagai referensi, jangan disalin mentah):
-- C1 (Mengingat): menyebutkan/mengidentifikasi fakta eksplisit
-  -> cocok question_format: isian_singkat
-- C2 (Memahami): menjelaskan makna/istilah dengan kalimat sendiri
-  -> cocok question_format: isian_singkat atau esai_pendek
-- C3 (Menerapkan): menggunakan konsep/langkah pada situasi baru yang sejenis
-  -> cocok question_format: esai_pendek
-- C4 (Menganalisis): menjelaskan hubungan, perbandingan, atau sebab-akibat
-  -> cocok question_format: esai
+Panduan operasi kognitif per level untuk siswa SD (6-12 tahun):
+- C1 (Mengingat): menyebutkan/mengidentifikasi fakta/nama/istilah eksplisit dari materi.
+  -> cocok format: isian_singkat
+- C2 (Memahami): menjelaskan konsep, proses, atau fungsi dengan kata-kata sendiri yang mudah dipahami anak SD.
+  -> cocok format: isian_singkat atau esai_pendek
+- C3 (Menerapkan): menggunakan konsep sains pada situasi/peristiwa sehari-hari anak SD (memerlukan skenario/stimulus kontekstual nyata).
+  -> cocok format: esai_pendek (harus memiliki skenario pendek)
+- C4 (Menganalisis): menelaah sebab-akibat, membandingkan dua kondisi, atau memprediksi akibat suatu perubahan (memerlukan stimulus kasus sederhana).
+  -> cocok format: esai (harus memiliki narasi kasus sebab-akibat)
 
 Tentukan:
-1. cognitive_operation
-2. student_task
-3. reasoning_required
-4. expected_evidence
-5. recommended_question_format (isian_singkat / esai_pendek / esai)
-6. prohibited_question_pattern (pola pertanyaan yang harus dihindari agar level tidak turun/naik, contoh: untuk C4 hindari pola "Apa yang dimaksud dengan...")
-
-Ketentuan:
-1. Jangan membuat pertanyaan final di tahap ini.
-2. Jangan menggunakan informasi di luar CONTENT ANALYSIS.
-3. cognitive_operation harus konsisten dengan target_bloom_level.
+1. cognitive_operation (operasi berpikir target)
+2. student_task (tugas spesifik siswa)
+3. reasoning_required (alur penalaran yang diharapkan)
+4. stimulus_idea (gagasan skenario/konteks sehari-hari untuk level C3/C4, atau kosong jika C1/C2)
+5. expected_evidence (poin fakta buku yang menjadi dasar)
+6. recommended_question_format (isian_singkat / esai_pendek / esai)
+7. prohibited_question_pattern (pola yang dilarang agar level tidak meleset)
 
 OUTPUT JSON:
 {{
@@ -113,6 +109,7 @@ OUTPUT JSON:
   "cognitive_operation": "...",
   "student_task": "...",
   "reasoning_required": "...",
+  "stimulus_idea": "...",
   "expected_evidence": "...",
   "recommended_question_format": "...",
   "prohibited_question_pattern": ["..."]
@@ -130,18 +127,18 @@ COGNITIVE PLAN:
 {cognitive_plan}
 
 Tentukan:
-1. knowledge_point (spesifik, bukan topik umum)
-2. question_type (pilih sesuai recommended_question_format: isian_singkat / esai_pendek / esai)
-3. question_intent (apa yang ingin diukur dari siswa)
-4. grounding_evidence (WAJIB kutipan kalimat persis dari CONTEXT/testable_content, bukan parafrase)
-5. expected_answer_summary (ringkasan inti jawaban ideal yang diharapkan)
-6. answer_scope (batasan panjang/kedalaman jawaban, sesuaikan usia SD)
+1. knowledge_point (pokok materi spesifik yang diuji)
+2. question_type (isian_singkat / esai_pendek / esai)
+3. question_intent (indikator kompetensi yang diukur)
+4. grounding_evidence (WAJIB kutipan kalimat persis dari CONTEXT/testable_content sebagai bukti materi)
+5. stimulus_context (skenario/cerita singkat kehidupan nyata untuk C3/C4, atau string kosong jika C1/C2)
+6. expected_answer_summary (ringkasan inti jawaban ideal yang diharapkan)
+7. answer_scope (batasan panjang/kedalaman jawaban siswa SD)
 
 Ketentuan:
 1. Pertanyaan harus dapat dijawab sepenuhnya dari CONTEXT, tidak boleh membutuhkan pengetahuan di luar itu.
-2. question_type dan struktur soal harus konsisten dengan cognitive_operation pada COGNITIVE PLAN.
-3. Untuk target C3-C4, expected_answer_summary TIDAK BOLEH bisa dijawab hanya dengan mengutip satu kalimat definisi.
-4. grounding_evidence harus dapat ditelusuri kembali ke CONTEXT kata per kata.
+2. Untuk C3-C4, wajib sediakan stimulus_context konkret agar siswa tidak sekadar mengutip definisi.
+3. grounding_evidence harus dapat ditelusuri kembali ke CONTEXT kata per kata.
 
 OUTPUT JSON:
 {{
@@ -149,12 +146,13 @@ OUTPUT JSON:
   "question_type": "...",
   "question_intent": "...",
   "grounding_evidence": "...",
+  "stimulus_context": "...",
   "expected_answer_summary": "...",
   "answer_scope": "..."
 }}
 """
 
-STAGE4_QUESTION_GENERATION_PROMPT = """Buat SATU pertanyaan {question_type} beserta jawaban ideal dan penjelasan konteks materinya, mengikuti QUESTION BLUEPRINT.
+STAGE4_QUESTION_GENERATION_PROMPT = """Buat SATU butir soal evaluasi {question_type} untuk siswa SD beserta jawaban ideal dan penjelasan edukatif, mengikuti QUESTION BLUEPRINT.
 
 Gunakan:
 
@@ -164,17 +162,18 @@ CONTEXT:
 QUESTION BLUEPRINT:
 {question_blueprint}
 
-CONTOH SOAL SEJENIS (few-shot, level & tipe soal yang sama):
+CONTOH SOAL SEJENIS (few-shot):
 {few_shot_examples}
 
-Ketentuan:
-1. Pertanyaan harus sepenuhnya didukung oleh grounding_evidence pada blueprint; jangan menambahkan fakta di luar CONTEXT.
-2. Pertanyaan harus mencerminkan cognitive_operation target ({target_bloom_level}), bukan sekadar hafalan jika levelnya C3-C4.
-3. Gunakan Bahasa Indonesia yang sederhana, kalimat pendek, hindari istilah abstrak tanpa penjelasan, sesuai usia siswa SD.
-4. Hindari kalimat bermakna ganda atau pertanyaan dengan banyak interpretasi.
-5. Jangan menyebutkan kata "Bloom", nama level kognitif, atau nomor bab di dalam teks pertanyaan.
-6. expected_answer harus 100% bersumber dari CONTEXT.
-7. explanation harus memberikan penjelasan ringkas dan edukatif mengenai konteks materi mengapa jawaban tersebut benar.
+Ketentuan Khusus Penulisan Soal SD:
+1. Kesesuaian Kognitif ({target_bloom_level}):
+   - Untuk C1/C2: Buat pertanyaan langsung yang jelas dan mudah dipahami.
+   - Untuk C3/C4: Sertakan narasi/stimulus situasi sehari-hari yang ramah anak sebelum mengajukan pertanyaan analitis.
+2. Gaya Bahasa: Gunakan Bahasa Indonesia yang sederhana, komunikatif, bersahabat, kalimat pendek, dan tidak ambigu bagi siswa SD.
+3. Hindari Kata Larangan: Jangan sebut kata 'Bloom', 'C1-C4', 'Bab', atau 'Halaman' di dalam teks soal.
+4. Faktual & Anti-Halusinasi: Semua fakta sains, mekanisme, organ, atau konsep dalam `question` dan `expected_answer` HARUS 100% bersumber dari CONTEXT dan `grounding_evidence`. DILARANG menambahkan fakta ilmiah atau konsep di luar materi yang diberikan.
+5. Jawaban Ideal (expected_answer): Harus 100% didukung fakta materi CONTEXT, dirumuskan dengan kalimat utuh, komunikatif, dan runtut sebagai standar kunci jawaban guru.
+6. Penjelasan (explanation): Berikan penjelasan ringkas dan edukatif mengapa jawaban tersebut benar berdasarkan konsep materi buku.
 
 OUTPUT JSON:
 {{
@@ -188,12 +187,12 @@ OUTPUT JSON:
 }}
 """
 
-LLM_JUDGE_PROMPT = """Evaluasi paket soal berikut secara bersamaan — question, expected_answer, dan explanation adalah satu kesatuan yang harus dinilai bersama.
+LLM_JUDGE_PROMPT = """Evaluasi paket soal evaluasi SD berikut secara objektif dan teliti — question, expected_answer, dan explanation dinilai sebagai satu kesatuan.
 
 CONTEXT:
 {retrieved_context}
 
-GROUNDING EVIDENCE (klaim dari sistem):
+GROUNDING EVIDENCE:
 {grounding_evidence}
 
 QUESTION:
@@ -208,28 +207,25 @@ EXPLANATION:
 TARGET BLOOM:
 {target_bloom_level}
 
-Evaluasi aspek berikut:
-1. grounding — apakah question & expected_answer benar-benar didukung CONTEXT (bukan halusinasi)?
-2. bloom_adherence — level kognitif apa yang SEBENARNYA dituntut pertanyaan ini (deteksi ulang dari nol, jangan percaya label sistem), apakah cocok dengan TARGET BLOOM?
-3. bahasa — apakah bahasa sesuai usia SD (sederhana, tidak ambigu)?
-4. answerability — apakah pertanyaan dapat dijawab hanya dari CONTEXT?
-5. answer_alignment — apakah expected_answer & explanation benar-benar menjawab question secara akurat?
+Evaluasi 5 aspek kualitas:
+1. grounding — apakah fakta pada question & expected_answer 100% didukung CONTEXT (tidak ada halusinasi fakta)?
+2. bloom_adherence — evaluasi level kognitif yang SEBENARNYA dituntut soal ini (deteksi ulang secara independen). Apakah cocok dengan TARGET BLOOM? (Catatan: C3/C4 untuk SD membutuhkan skenario/analisis sebab-akibat, bukan hafalan definisi).
+3. bahasa — apakah bahasa jelas, komunikatif, dan ramah anak usia SD (6-12 tahun)?
+4. answerability — apakah soal dapat dijawab tuntas hanya dengan membaca CONTEXT yang ada?
+5. answer_alignment — apakah expected_answer & explanation menjawab question secara tepat, runtut, dan edukatif?
 
-Ketentuan:
-1. detected_level HARUS ditentukan secara independen, jangan hanya menyalin TARGET BLOOM.
-2. Jika salah satu aspek gagal, cantumkan feedback spesifik dan actionable (bukan generik seperti "perlu diperbaiki").
-3. Tentukan juga "failed_stage" untuk membantu proses perbaikan:
-   - "generation" jika masalah hanya di redaksi/bahasa/grounding pada teks akhir
-   - "planning" jika masalah di level kognitif yang tidak sesuai target
-   - "none" jika semua aspek lolos
+Tentukan "failed_stage":
+- "generation" jika masalah ada pada redaksi bahasa, format jawaban, atau kejelasan teks
+- "planning" jika level kognitif tidak sesuai target (misal C4 tetapi soalnya hanya hafalan C1)
+- "none" jika seluruh aspek lolos (pass)
 
 OUTPUT JSON:
 {{
-  "grounding": {{"status": "pass", "score": 1.0, "feedback": "Didukung teks konteks."}},
-  "bloom_adherence": {{"status": "pass", "detected_level": "...", "feedback": "Sesuai target bloom."}},
-  "bahasa": {{"status": "pass", "feedback": "Bahasa jelas dan cocok untuk SD."}},
+  "grounding": {{"status": "pass", "score": 1.0, "feedback": "Fakta didukung konteks materi."}},
+  "bloom_adherence": {{"status": "pass", "detected_level": "...", "feedback": "Sesuai target kognitif."}},
+  "bahasa": {{"status": "pass", "feedback": "Bahasa ramah anak SD dan mudah dipahami."}},
   "answerability": {{"status": "pass", "feedback": "Dapat dijawab dari konteks."}},
-  "answer_alignment": {{"status": "pass", "feedback": "Jawaban dan penjelasan relevan dengan pertanyaan."}},
+  "answer_alignment": {{"status": "pass", "feedback": "Jawaban tepat dan relevan dengan pertanyaan."}},
   "overall": "pass",
   "failed_stage": "none"
 }}
