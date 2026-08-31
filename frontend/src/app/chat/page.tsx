@@ -15,6 +15,7 @@ import { api } from '@/lib/api';
 import { Document } from '@/types/document';
 import { ChatMessage } from '@/types/chat';
 import { Question } from '@/types/question';
+import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
 
 function ChatContent() {
   const searchParams = useSearchParams();
@@ -328,9 +329,7 @@ function ChatContent() {
                         </Badge>
                       )}
                     </Group>
-                    <Text size="sm" style={{ whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>
-                      {msg.content}
-                    </Text>
+                    <MarkdownRenderer content={msg.content} isUser={msg.role === 'user'} />
                   </Box>
                 </Group>
               ))}
@@ -480,12 +479,10 @@ function ChatContent() {
                     {/* Explanation */}
                     {q.explanation && (
                       <Box p="xs" style={{ borderRadius: '6px', border: '1px solid var(--mantine-color-default-border)' }} mb="xs">
-                        <Text size="xs" fw={700} c="dimmed">
+                        <Text size="xs" fw={700} c="dimmed" mb={2}>
                           Penjelasan:
                         </Text>
-                        <Text size="xs" style={{ whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>
-                          {q.explanation}
-                        </Text>
+                        <MarkdownRenderer content={q.explanation} />
                       </Box>
                     )}
 

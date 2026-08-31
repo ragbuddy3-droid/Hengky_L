@@ -41,6 +41,7 @@ import {
 } from '@tabler/icons-react';
 import { api } from '@/lib/api';
 import { Question, PromptTraceItem, ValidationLog } from '@/types/question';
+import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
 
 export default function QuestionsPage() {
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -330,7 +331,7 @@ export default function QuestionsPage() {
                           {selectedQuestion.explanation && (
                             <Paper p="xs" px="sm" radius="xs" withBorder style={{ backgroundColor: 'var(--mantine-color-body)' }}>
                               <Text size="xs" fw={700} c="teal" mb={2}>Penjelasan:</Text>
-                              <Text size="xs">{selectedQuestion.explanation}</Text>
+                              <MarkdownRenderer content={selectedQuestion.explanation} />
                             </Paper>
                           )}
                           {selectedQuestion.source_reference && (
@@ -494,7 +495,7 @@ export default function QuestionsPage() {
                           <Accordion variant="separated" radius="md">
                             {selectedQuestion.validation_logs.map((log) => {
                               const aspects = typeof log.aspect_evaluations === 'string'
-                                ? (() => { try { return json.parse(log.aspect_evaluations); } catch { return null; } })()
+                                ? (() => { try { return JSON.parse(log.aspect_evaluations); } catch { return null; } })()
                                 : log.aspect_evaluations;
 
                               return (
