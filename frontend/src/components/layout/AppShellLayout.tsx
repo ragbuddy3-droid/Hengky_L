@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import {
   AppShell, Group, Title, Text, NavLink, ActionIcon,
-  useMantineColorScheme, Badge, Box, Container, Divider,
-  Button, ScrollArea, Tooltip, Loader
+  useMantineColorScheme, Box, Container, Divider,
+  Button, ScrollArea, Tooltip, Loader, ThemeIcon
 } from '@mantine/core';
 import {
   IconBook, IconMessage2, IconQuestionMark, IconSun, IconMoon,
@@ -46,7 +46,7 @@ function NavbarChatList({ pathname }: { pathname: string }) {
     return () => {
       window.removeEventListener('chat-sessions-changed', handleSessionsChanged);
     };
-  }, [fetchChatSessions, pathname]);
+  }, [fetchChatSessions]);
 
   const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -148,24 +148,12 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between">
           <Group gap="xs">
-            <Box
-              style={{
-                background: 'linear-gradient(135deg, #228be6 0%, #15aabf 100%)',
-                padding: '6px 10px',
-                borderRadius: '8px',
-                color: '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-            >
+            <ThemeIcon size="md" radius="md" color="blue" variant="light">
               <IconCpu size={20} />
-              <Text fw={700} size="sm">RAG-AQG</Text>
-            </Box>
+            </ThemeIcon>
             <Title order={4} style={{ letterSpacing: '-0.5px' }}>
               Automatic Question Generator
             </Title>
-            <Badge variant="light" color="blue" size="sm">v3.0</Badge>
           </Group>
 
           <Group>

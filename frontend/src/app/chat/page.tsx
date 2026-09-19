@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react';
 import {
-  Title, Text, Stack, Group, Select, Textarea, ActionIcon,
-  Button, Badge, Loader, Alert, Chip, Card, Box, Divider
+  Text, Stack, Group, Select, Textarea, ActionIcon,
+  Button, Badge, Loader, Alert, Chip, Card, Box
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
-  IconSend, IconMessage2, IconSparkles, IconCheck, IconAlertCircle,
+  IconSend, IconMessage2, IconAlertCircle,
   IconListCheck, IconBook, IconRefresh, IconHelpCircle, IconPlus
 } from '@tabler/icons-react';
 import { useSearchParams, useRouter } from 'next/navigation';

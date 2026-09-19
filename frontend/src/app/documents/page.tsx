@@ -13,7 +13,6 @@ export default function DocumentsPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<string>('IPAS');
-  const [selectedChunkingStrategy, setSelectedChunkingStrategy] = useState<string>('section_aware');
 
   // Chunk Drawer State
   const [selectedDocForChunks, setSelectedDocForChunks] = useState<Document | null>(null);
@@ -61,15 +60,10 @@ export default function DocumentsPage() {
 
     try {
       setUploading(true);
-      await api.uploadDocument(file, selectedSubject, selectedChunkingStrategy);
-      const stratLabel = selectedChunkingStrategy === 'section_aware'
-        ? 'Section-Aware Chunking'
-        : selectedChunkingStrategy === 'semantic'
-        ? 'Semantic Chunking'
-        : 'Fixed Chunking';
+      await api.uploadDocument(file, selectedSubject, 'fixed');
       notifications.show({
         title: 'Upload Berhasil',
-        message: `${file.name} telah diunggah dan sedang diproses dengan strategi ${stratLabel}.`,
+        message: `${file.name} telah diunggah dan sedang diproses dengan strategi Fixed Chunking (1000 Karakter).`,
         color: 'green',
         icon: <IconCheck size={18} />,
       });
@@ -180,7 +174,7 @@ export default function DocumentsPage() {
         <div>
           <Title order={2}>Manajemen Dokumen Buku PDF</Title>
           <Text c="dimmed" size="sm">
-            Unggah dokumen PDF buku pelajaran yang akan diekstrak dan diindeks secara Section-Aware untuk Automatic Question Generation.
+            Unggah dokumen PDF buku pelajaran yang akan diekstrak dan diindeks secara Fixed Chunking untuk Automatic Question Generation.
           </Text>
         </div>
         <Button variant="light" leftSection={<IconRefresh size={16} />} onClick={fetchDocuments} loading={loading}>
@@ -198,20 +192,12 @@ export default function DocumentsPage() {
             data={['IPAS', 'PJOK', 'PKN', 'Matematika', 'Umum']}
             style={{ width: '200px' }}
           />
-          <Select
-            label="Metode Chunking"
-            placeholder="Pilih Strategi"
-            value={selectedChunkingStrategy}
-            onChange={(val) => setSelectedChunkingStrategy(val || 'section_aware')}
-            data={[
-              { value: 'section_aware', label: 'Section-Aware Chunking (Rekomendasi)' },
-              { value: 'fixed', label: 'Fixed Chunking (Tradisional)' },
-              { value: 'semantic', label: 'Semantic Chunking' },
-            ]}
-            style={{ width: '320px' }}
-          />
+          <Paper withBorder p="xs" px="md" radius="sm" style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
+            <Text size="xs" c="dimmed">Metode Chunking</Text>
+            <Text size="sm" fw={600} c="blue">Fixed Chunking (1000 Karakter, Overlap 150)</Text>
+          </Paper>
           <Text size="xs" c="dimmed" pb={8}>
-            Metode pemotongan materi berbasis struktur bab & heading buku.
+            Pemotongan materi fixed-size dengan pemetaan bab, topik, dan halaman.
           </Text>
         </Group>
 

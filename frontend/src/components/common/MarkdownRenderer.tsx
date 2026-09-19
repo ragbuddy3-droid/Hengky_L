@@ -8,17 +8,18 @@ import { Title, Text, Code, Divider, Anchor, Box } from '@mantine/core';
 interface MarkdownRendererProps {
   content: string;
   isUser?: boolean;
+  fontSize?: string | number;
 }
 
-export function MarkdownRenderer({ content, isUser = false }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, isUser = false, fontSize }: MarkdownRendererProps) {
   return (
     <Box
       className="markdown-content"
       style={{
         wordBreak: 'break-word',
         color: isUser ? '#ffffff' : 'inherit',
-        fontSize: '14px',
-        lineHeight: 1.6,
+        fontSize: fontSize || '15px',
+        lineHeight: 1.65,
       }}
     >
       <ReactMarkdown
@@ -28,10 +29,11 @@ export function MarkdownRenderer({ content, isUser = false }: MarkdownRendererPr
             <Title
               order={4}
               style={{
-                marginTop: '14px',
+                marginTop: '16px',
                 marginBottom: '8px',
                 color: isUser ? '#ffffff' : 'inherit',
                 fontWeight: 700,
+                fontSize: '1.4em',
               }}
               {...props}
             />
@@ -40,10 +42,11 @@ export function MarkdownRenderer({ content, isUser = false }: MarkdownRendererPr
             <Title
               order={5}
               style={{
-                marginTop: '12px',
+                marginTop: '14px',
                 marginBottom: '6px',
                 color: isUser ? '#ffffff' : 'inherit',
                 fontWeight: 700,
+                fontSize: '1.25em',
               }}
               {...props}
             />
@@ -52,11 +55,11 @@ export function MarkdownRenderer({ content, isUser = false }: MarkdownRendererPr
             <Title
               order={6}
               style={{
-                marginTop: '10px',
+                marginTop: '12px',
                 marginBottom: '6px',
                 color: isUser ? '#ffffff' : 'inherit',
                 fontWeight: 700,
-                fontSize: '14px',
+                fontSize: '1.15em',
               }}
               {...props}
             />
@@ -160,7 +163,7 @@ export function MarkdownRenderer({ content, isUser = false }: MarkdownRendererPr
                 block
                 style={{
                   margin: '8px 0',
-                  fontSize: '12px',
+                  fontSize: '0.9em',
                   borderRadius: '6px',
                   overflowX: 'auto',
                 }}
@@ -191,7 +194,7 @@ export function MarkdownRenderer({ content, isUser = false }: MarkdownRendererPr
                 style={{
                   borderCollapse: 'collapse',
                   width: '100%',
-                  fontSize: '13px',
+                  fontSize: '0.92em',
                   border: isUser
                     ? '1px solid rgba(255,255,255,0.3)'
                     : '1px solid var(--mantine-color-default-border)',

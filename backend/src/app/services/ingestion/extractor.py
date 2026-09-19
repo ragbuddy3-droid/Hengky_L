@@ -275,7 +275,7 @@ def detect_chapter_opener(page_norm: str, toc_map: dict[str, ChapterInfo]) -> Ch
                         return ChapterInfo(number=num, title="", full_label=f"Bab {num}")
 
     # 3. Match known TOC chapter titles directly if they appear prominently in top lines
-    for num, ch_info in toc_map.items():
+    for ch_info in toc_map.values():
         if ch_info.title and len(ch_info.title) > 4:
             for line in lines[:8]:
                 if ch_info.title.lower() in line.lower() and len(line) < len(ch_info.title) + 15:
@@ -407,7 +407,7 @@ def find_main_content_start(raw_pages: list[tuple[int, str]]) -> int:
     in_guide = False
     fm_indices: set[int] = set()
 
-    for i, (p_num, raw) in enumerate(raw_pages[:30]):
+    for i, (_, raw) in enumerate(raw_pages[:30]):
         norm = normalize_text_fonts(raw)
         lines = [l.strip() for l in norm.split('\n') if l.strip()]
         if not lines:
@@ -460,7 +460,7 @@ def find_main_content_start(raw_pages: list[tuple[int, str]]) -> int:
             if is_bab1_opener(lines):
                 break
 
-    for i, (p_num, raw) in enumerate(raw_pages[:30]):
+    for i, (_, raw) in enumerate(raw_pages[:30]):
         if i in fm_indices or i < 4:
             continue
         norm = normalize_text_fonts(raw)

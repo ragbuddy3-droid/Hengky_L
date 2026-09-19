@@ -401,8 +401,6 @@ async def generate_questions(state: AQGState) -> dict[str, Any]:
     # Ensure SD Bloom range C1-C4
     bloom_level = bloom_level_raw if any(b in bloom_level_raw for b in ["C1", "C2", "C3", "C4"]) else "C2-Memahami"
 
-    settings = get_settings()
-
     # Adaptive temperature models per stage
     analysis_model = get_chat_model(is_judge=False, temperature=0.1)
     planning_model = get_chat_model(is_judge=False, temperature=0.2)

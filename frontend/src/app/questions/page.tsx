@@ -37,10 +37,9 @@ import {
   IconCode,
   IconClock,
   IconQuote,
-  IconArrowRight,
 } from '@tabler/icons-react';
 import { api } from '@/lib/api';
-import { Question, PromptTraceItem, ValidationLog } from '@/types/question';
+import { Question } from '@/types/question';
 import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
 
 export default function QuestionsPage() {

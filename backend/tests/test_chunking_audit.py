@@ -1,16 +1,11 @@
 """Comprehensive unit and regression tests for Chapter Extraction, Section Heading Scoping, Rubric Filtering, and Context Traceability."""
 
-import pytest
 from app.services.ingestion.extractor import (
     PageContent,
-    clean_text,
     extract_chapter_from_raw_page,
 )
 from app.services.ingestion.chunkers.classifiers import (
-    CHAPTER_START_REGEX,
     SECTION_HEADING_REGEX,
-    classify_chunk_category,
-    extract_chapter_and_heading,
 )
 from app.services.ingestion.chunkers.fixed_chunker import FixedChunker
 from app.services.retrieval.hybrid_search import is_exercise_or_instruction_chunk
