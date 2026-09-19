@@ -12,7 +12,7 @@ from app.services.ingestion.chunkers.classifiers import (
     classify_chunk_category,
     extract_chapter_and_heading,
 )
-from app.services.ingestion.chunkers.section_aware_chunker import SectionAwareChunker
+from app.services.ingestion.chunkers.fixed_chunker import FixedChunker
 from app.services.retrieval.hybrid_search import is_exercise_or_instruction_chunk
 from app.graph.nodes import find_best_chunk_for_focus
 
@@ -74,8 +74,8 @@ def test_rubric_and_reflection_filter():
     assert is_exercise_or_instruction_chunk(concept_text) is False
 
 
-def test_section_aware_chunker_inherits_chapter_and_heading():
-    """SectionAwareChunker should correctly inherit chapter and clean headings across pages."""
+def test_fixed_chunker_inherits_chapter_and_heading():
+    """FixedChunker should correctly inherit chapter and clean headings across pages."""
     pages = [
         PageContent(
             page_number=121,
@@ -89,13 +89,14 @@ def test_section_aware_chunker_inherits_chapter_and_heading():
         ),
     ]
 
-    chunker = SectionAwareChunker(target_words_min=20, target_words_max=100, overlap_sentences=1)
+    chunker = FixedChunker(chunk_size=1000, chunk_overlap=150)
     chunks = chunker.chunk_pages(pages)
 
     assert len(chunks) >= 1
     assert chunks[0].chapter == "Bab 5: Energi untuk Masa Depan"
     assert chunks[0].section_heading == "Topik A: Mengapa Kita Memerlukan Energi"
     assert chunks[0].page_number in (121, 122)
+
 
 
 def test_find_best_chunk_for_focus():

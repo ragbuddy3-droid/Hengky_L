@@ -94,14 +94,10 @@ class RetrievalConfig(BaseModel):
 
 
 class ChunkingConfig(BaseModel):
-    strategy: str = "section_aware"
-    target_words_min: int = 250
-    target_words_max: int = 450
-    overlap_sentences: int = 2
+    strategy: str = "fixed"
     fixed_chunk_size: int = 1000
     fixed_chunk_overlap: int = 150
-    semantic_breakpoint_type: str = "percentile"
-    semantic_breakpoint_threshold: float = 95.0
+
 
 
 class Settings(BaseModel):

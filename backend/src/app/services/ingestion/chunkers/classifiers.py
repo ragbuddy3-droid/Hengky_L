@@ -6,11 +6,13 @@ ROMAN_MAP = {
     'I': '1', 'II': '2', 'III': '3', 'IV': '4', 'V': '5',
     'VI': '6', 'VII': '7', 'VIII': '8', 'IX': '9', 'X': '10',
     'XI': '11', 'XII': '12', 'XIII': '13', 'XIV': '14', 'XV': '15',
+    'XVI': '16', 'XVII': '17', 'XVIII': '18', 'XIX': '19', 'XX': '20',
 }
 
 # Strict chapter anchor regex: matches "Bab 1: Judul", "Bab 1 | Judul", or "Bab 1"
+# Restricts chapter numbers strictly to 1-20 or Roman numerals I-XX, rejecting prepositions like "DI"
 CHAPTER_START_REGEX = re.compile(
-    r'^\s*(?:BAB|UNIT|TEMA|MODUL|CHAPTER|PEMBELAJARAN)\s+([0-9IVXLCDM]+)(?:[\s:\.\-–—\|]+(.*))?$',
+    r'^\s*(?:BAB|UNIT|TEMA|MODUL|CHAPTER|PEMBELAJARAN)\s+([0-9]{1,2}|X{0,2}(?:IX|IV|V?I{1,3}))(?:[\s:\.\-–—\|]+(.*))?$',
     re.IGNORECASE,
 )
 
@@ -74,7 +76,10 @@ def extract_chapter_and_heading(
         chap_match = CHAPTER_START_REGEX.match(line)
         if chap_match:
             raw_num = chap_match.group(1).upper()
+            if raw_num in ['DI', 'DAN', 'KE', 'DARI', 'PADA', 'INI']:
+                continue
             norm_num = ROMAN_MAP.get(raw_num, raw_num)
+            norm_num = str(int(norm_num)) if norm_num.isdigit() else norm_num
             title = (chap_match.group(2) or "").strip(" :.-–—|")
             # Strip trailing page numbers if any
             title = re.sub(r'\s+\d+$', '', title).strip()

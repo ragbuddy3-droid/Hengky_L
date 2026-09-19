@@ -27,13 +27,13 @@ def test_settings_pure_yaml():
     settings = get_settings()
     assert settings.app.backend_port == 8000
     assert settings.llm.provider == "deepinfra"
-    assert settings.llm.generator_model == "Qwen/Qwen3-32B"
+    assert settings.llm.generator_model == "Qwen/Qwen2.5-72B-Instruct"
     assert settings.llm.judge_model == "meta-llama/Llama-3.3-70B-Instruct-Turbo"
     assert settings.llm.deepinfra_base_url == "https://api.deepinfra.com/v1/openai"
     assert settings.validation.fast_reject_threshold == 0.40
-    assert settings.chunking.strategy == "section_aware"
+    assert settings.chunking.strategy == "fixed"
     assert settings.retrieval.candidate_top_k == 15
-    assert settings.retrieval.reranker_enabled is True
+    assert settings.retrieval.reranker_enabled is False
 
 
 def test_deepinfra_chat_model_initialization():
@@ -41,7 +41,7 @@ def test_deepinfra_chat_model_initialization():
     from app.graph.nodes import get_chat_model
 
     gen_model = get_chat_model(is_judge=False)
-    assert gen_model.model_name == "Qwen/Qwen3-32B"
+    assert gen_model.model_name == "Qwen/Qwen2.5-72B-Instruct"
     assert "deepinfra.com" in str(gen_model.openai_api_base)
     assert gen_model.model_kwargs.get("response_format") == {"type": "json_object"}
     assert gen_model.max_tokens == 4096
@@ -53,8 +53,8 @@ def test_deepinfra_chat_model_initialization():
     assert judge_model.max_tokens == 4096
 
 
-def test_section_aware_chunker():
-    """Verify SectionAwareChunker preserves structure, chapter, heading, and page metadata."""
+def test_fixed_chunker():
+    """Verify FixedChunker preserves structure, chapter, heading, and page metadata."""
     from app.services.ingestion.extractor import PageContent
 
     sample_page_1 = PageContent(
@@ -75,8 +75,8 @@ def test_section_aware_chunker():
         )
     )
 
-    from app.services.ingestion.chunkers.section_aware_chunker import SectionAwareChunker
-    chunker = SectionAwareChunker(target_words_min=30, target_words_max=100, overlap_sentences=1)
+    from app.services.ingestion.chunkers.fixed_chunker import FixedChunker
+    chunker = FixedChunker(chunk_size=1000, chunk_overlap=150)
     chunks = chunker.chunk_pages([sample_page_1, sample_page_2])
 
     assert len(chunks) >= 1
@@ -86,8 +86,8 @@ def test_section_aware_chunker():
     assert chunks[0].chunk_index == 0
 
 
-def test_fixed_and_semantic_factory_fallback():
-    """Verify factory dispatches to SectionAwareChunker as default."""
+def test_fixed_chunker_factory():
+    """Verify factory dispatches to FixedChunker as default."""
     sample_text = (
         "Bab 1 Sistem Pernapasan Manusia\n"
         "Organ pernapasan manusia adalah hidung, tenggorokan, dan paru-paru. "
@@ -96,6 +96,7 @@ def test_fixed_and_semantic_factory_fallback():
     chunks = chunk_text(sample_text)
     assert len(chunks) >= 1
     assert "Bab 1" in str(chunks[0].chapter)
+
 
 
 def test_sparse_bm25_and_rrf():

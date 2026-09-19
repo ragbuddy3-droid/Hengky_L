@@ -33,9 +33,7 @@ retrieval:
   reranker_enabled: false
 
 chunking:
-  strategy: "section_aware"
-  target_words_min: 250
-  target_words_max: 450
-  overlap_sentences: 2
+  strategy: "fixed"
   fixed_chunk_size: 1000
   fixed_chunk_overlap: 150
+

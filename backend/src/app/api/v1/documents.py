@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
-def process_document_background(document_id: str, file_path: str, chunking_strategy: str = "section_aware"):
+def process_document_background(document_id: str, file_path: str, chunking_strategy: str = "fixed"):
     """Background task to extract, chunk, and index an uploaded PDF with page-level tracking."""
     logger.info("[Background] Starting document processing for doc_id='%s' (strategy='%s')", document_id, chunking_strategy)
     total_start = time.time()
@@ -116,7 +116,7 @@ async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile,
     subject: str = Form(...),
-    chunking_strategy: str = Form("section_aware")
+    chunking_strategy: str = Form("fixed")
 ):
     """Upload PDF file with selected chunking strategy."""
     if not file.filename or not file.filename.lower().endswith('.pdf'):
