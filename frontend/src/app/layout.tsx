@@ -13,6 +13,7 @@ export const metadata = {
 
 const theme = createTheme({
   primaryColor: 'blue',
+  defaultRadius: 'sm',
   fontFamily: 'Inter, system-ui, sans-serif',
 });
 

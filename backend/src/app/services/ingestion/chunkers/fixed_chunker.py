@@ -1,9 +1,8 @@
-"""Fixed-size chunker using LangChain RecursiveCharacterTextSplitter with pedagogical and chapter metadata enrichment."""
+"""Pure fixed-size chunker (sliding character window) with pedagogical and chapter metadata enrichment."""
 
 import logging
+from bisect import bisect_right
 from dataclasses import dataclass
-
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.services.ingestion.chunkers.classifiers import (
     classify_chunk_category,
@@ -12,6 +11,8 @@ from app.services.ingestion.chunkers.classifiers import (
 from app.services.ingestion.extractor import PageContent
 
 logger = logging.getLogger(__name__)
+
+PAGE_SEPARATOR = "\n\n"
 
 
 @dataclass
@@ -28,117 +29,65 @@ class ChunkResult:
 
 class FixedChunker:
     """
-    Fixed-size text chunker using LangChain RecursiveCharacterTextSplitter.
-    Accurately maps textbook structure (chapter, heading, page number, and pedagogical category).
+    Pure fixed-size chunker: a sliding window of exactly `chunk_size` characters,
+    advancing by `chunk_size - chunk_overlap` characters. No separator-aware splitting,
+    no per-page boundaries, and no fragment filtering. Only the final chunk may be shorter.
     """
 
     def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 150):
+        if chunk_overlap >= chunk_size:
+            raise ValueError("chunk_overlap must be smaller than chunk_size")
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            separators=["\n\n", "\n", ". ", "! ", "? ", "; ", " ", ""],
-            length_function=len,
-        )
+        self.step = chunk_size - chunk_overlap
         logger.info("FixedChunker initialized (chunk_size=%d, chunk_overlap=%d)", chunk_size, chunk_overlap)
+
+    def _windows(self, text: str) -> list[tuple[int, str]]:
+        """Return (start_offset, slice) pairs covering the whole text with fixed overlap."""
+        windows: list[tuple[int, str]] = []
+        n = len(text)
+        start = 0
+        while start < n:
+            end = min(start + self.chunk_size, n)
+            windows.append((start, text[start:end]))
+            if end >= n:
+                break
+            start += self.step
+        return windows
 
     def chunk_pages(self, pages: list[PageContent]) -> list[ChunkResult]:
         """
-        Split list of PageContent objects into fixed-size chunks while preserving
-        exact chapter mapping, section headings, page numbers, and pedagogical categories.
+        Concatenate all pages into one stream and cut it into fixed-size windows.
+        Each chunk is attributed to the page (and page chapter) where it starts.
         """
+        pages = [p for p in pages if p.text and p.text.strip()]
         if not pages:
             return []
 
-        results: list[ChunkResult] = []
-        current_chapter: str | None = None
-        current_heading: str | None = None
-        chunk_idx = 0
-
+        # Build the document stream and record each page's start offset
+        offsets: list[int] = []
+        parts: list[str] = []
+        pos = 0
         for page in pages:
-            # Inherit chapter from page metadata (populated from TOC & page openers)
-            if getattr(page, "chapter", None):
-                if current_chapter != page.chapter:
-                    current_chapter = page.chapter
-                    current_heading = None  # Reset heading on chapter transition
+            offsets.append(pos)
+            parts.append(page.text)
+            pos += len(page.text) + len(PAGE_SEPARATOR)
+        full_text = PAGE_SEPARATOR.join(parts)
 
-            page_text = page.text.strip()
-            if not page_text:
-                continue
-
-            # Split page text into fixed-size pieces
-            pieces = self.splitter.split_text(page_text)
-
-            for piece in pieces:
-                content = piece.strip()
-                if not content:
-                    continue
-
-                # Extract or update chapter & heading from the chunk content
-                extracted_ch, current_heading = extract_chapter_and_heading(
-                    content, current_chapter, current_heading
-                )
-                if extracted_ch and extracted_ch != current_chapter:
-                    current_chapter = extracted_ch
-                    current_heading = None
-
-                # Fallback to page.chapter if current_chapter is still unassigned
-                if not current_chapter and getattr(page, "chapter", None):
-                    current_chapter = page.chapter
-
-                # Avoid standalone tiny fragments (< 10 words) if we already have chunks
-                if len(content.split()) < 10 and results:
-                    continue
-
-                category = classify_chunk_category(content)
-
-                results.append(
-                    ChunkResult(
-                        text=content,
-                        category=category,
-                        section_heading=current_heading,
-                        chapter=current_chapter,
-                        page_number=page.page_number,
-                        chunk_index=chunk_idx,
-                        section_type=category,
-                    )
-                )
-                chunk_idx += 1
-
-        logger.info("FixedChunker produced %d chunks from %d pages", len(results), len(pages))
-        return results
-
-    def chunk(
-        self,
-        text: str,
-        page_number: int | None = 1,
-        max_chunk_size: int | None = None,
-    ) -> list[ChunkResult]:
-        """Split text into fixed chunks with chapter and pedagogical metadata."""
-        if not text or not text.strip():
-            logger.warning("FixedChunker received empty text.")
-            return []
-
-        splitter = self.splitter
-        if max_chunk_size and max_chunk_size != self.chunk_size:
-            splitter = RecursiveCharacterTextSplitter(
-                chunk_size=max_chunk_size,
-                chunk_overlap=self.chunk_overlap,
-                separators=["\n\n", "\n", ". ", "! ", "? ", "; ", " ", ""],
-                length_function=len,
-            )
-
-        pieces = splitter.split_text(text)
         results: list[ChunkResult] = []
         current_chapter: str | None = None
         current_heading: str | None = None
-        chunk_idx = 0
 
-        for piece in pieces:
-            content = piece.strip()
-            if not content or (len(content.split()) < 10 and results):
+        for start, content in self._windows(full_text):
+            if not content.strip():
                 continue
+
+            page = pages[bisect_right(offsets, start) - 1]
+
+            # Inherit chapter from page metadata (populated from TOC & page openers)
+            if page.chapter and page.chapter != current_chapter:
+                current_chapter = page.chapter
+                current_heading = None  # Reset heading on chapter transition
 
             extracted_ch, current_heading = extract_chapter_and_heading(
                 content, current_chapter, current_heading
@@ -148,19 +97,27 @@ class FixedChunker:
                 current_heading = None
 
             category = classify_chunk_category(content)
-
             results.append(
                 ChunkResult(
                     text=content,
                     category=category,
                     section_heading=current_heading,
                     chapter=current_chapter,
-                    page_number=page_number or 1,
-                    chunk_index=chunk_idx,
+                    page_number=page.page_number,
+                    chunk_index=len(results),
                     section_type=category,
                 )
             )
-            chunk_idx += 1
 
-        logger.info("FixedChunker produced %d chunks from %d characters", len(results), len(text))
+        logger.info("FixedChunker produced %d chunks from %d pages", len(results), len(pages))
         return results
+
+    def chunk(self, text: str, page_number: int | None = 1) -> list[ChunkResult]:
+        """Split raw text into fixed-size chunks with chapter and pedagogical metadata."""
+        if not text or not text.strip():
+            logger.warning("FixedChunker received empty text.")
+            return []
+
+        chunks = self.chunk_pages([PageContent(page_number=page_number or 1, text=text)])
+        logger.info("FixedChunker produced %d chunks from %d characters", len(chunks), len(text))
+        return chunks
