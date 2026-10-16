@@ -1,0 +1,88 @@
+:root {
+  --app-bg: #f8fafc;
+}
+
+:root[data-mantine-color-scheme='dark'] {
+  --app-bg: var(--mantine-color-dark-8);
+}
+
+body {
+  background: var(--app-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Permukaan yang bisa diklik: ubah border/latar saat hover & fokus (tanpa shadow, gaya flat). */
+.hover-surface {
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+:is(a, button):hover > .hover-surface,
+:is(a, button):focus-visible > .hover-surface {
+  border-color: var(--mantine-primary-color-filled);
+  background-color: var(--mantine-color-default-hover);
+}
+
+/* Markdown di bubble chat: heading lebih kecil agar tidak mendominasi. */
+.markdown-compact :is(h1, h2, h3, h4) {
+  font-size: var(--mantine-font-size-md);
+  line-height: 1.4;
+  margin-top: var(--mantine-spacing-md);
+  margin-bottom: var(--mantine-spacing-xs);
+}
+.markdown-compact > :first-child {
+  margin-top: 0;
+}
+
+/* Teks sekunder: gray.6 bawaan Mantine hanya 3.2:1 di latar terang — gelapkan agar ≥ 4.5:1. */
+:root[data-mantine-color-scheme='light'] {
+  --mantine-color-dimmed: var(--mantine-color-gray-7);
+}
+:root[data-mantine-color-scheme='dark'] {
+  --mantine-color-dimmed: var(--mantine-color-dark-1);
+}
+
+/* Warna teks semantik yang lolos kontras di kedua skema. */
+:root[data-mantine-color-scheme='light'] {
+  --app-danger-text: var(--mantine-color-red-9);
+  --app-success-text: #15803d;
+  --app-warning-text: var(--mantine-color-accent-7);
+}
+:root[data-mantine-color-scheme='dark'] {
+  --app-danger-text: var(--mantine-color-red-4);
+  --app-success-text: var(--mantine-color-green-4);
+  --app-warning-text: var(--mantine-color-orange-4);
+}
+
+.hover-chip {
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+.hover-chip:not(:disabled):hover {
+  border-color: var(--mantine-primary-color-filled) !important;
+  background-color: var(--mantine-color-default-hover);
+}
+
+/* Skip link: tersembunyi sampai mendapat fokus keyboard. */
+.skip-link {
+  position: fixed;
+  top: var(--mantine-spacing-sm);
+  left: var(--mantine-spacing-sm);
+  z-index: 1000;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-md);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-primary-color-filled);
+  color: var(--mantine-color-white);
+  font-weight: 600;
+  transform: translateY(-200%);
+}
+.skip-link:focus-visible {
+  transform: none;
+}

@@ -1,39 +1,30 @@
 import '@mantine/core/styles.css';
 import '@mantine/dropzone/styles.css';
 import '@mantine/notifications/styles.css';
+import './globals.css';
 
-import { ColorSchemeScript, MantineProvider, createTheme } from '@mantine/core';
-import { Notifications } from '@mantine/notifications';
-import AppShellLayout from '@/components/layout/AppShellLayout';
+import type { Metadata } from 'next';
+import { Inter, JetBrains_Mono } from 'next/font/google';
+import { ColorSchemeScript, mantineHtmlProps } from '@mantine/core';
+import { Providers } from './providers';
 
-export const metadata = {
-  title: 'RAG-AQG — Automatic Question Generator v3',
-  description: 'Sistem pembuatan soal otomatis berbasis RAG dengan validasi 2-layer dan self-refinement.',
+const inter = Inter({ subsets: ['latin'], display: 'swap', variable: '--font-inter' });
+const mono = JetBrains_Mono({ subsets: ['latin'], display: 'swap', variable: '--font-mono' });
+
+export const metadata: Metadata = {
+  title: { default: 'AQG — Pembuat Soal Otomatis', template: '%s · AQG' },
+  description: 'Buat soal secara otomatis dari buku dengan RAG dan validasi berlapis.',
 };
 
-const theme = createTheme({
-  primaryColor: 'blue',
-  defaultRadius: 'sm',
-  fontFamily: 'Inter, system-ui, sans-serif',
-});
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="id" suppressHydrationWarning>
+    <html lang="id" {...mantineHtmlProps} className={`${inter.variable} ${mono.variable}`}>
       <head>
         <ColorSchemeScript defaultColorScheme="auto" />
       </head>
       <body>
-        <MantineProvider theme={theme} defaultColorScheme="auto">
-          <Notifications position="top-right" zIndex={1000} />
-          <AppShellLayout>{children}</AppShellLayout>
-        </MantineProvider>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
 }
-

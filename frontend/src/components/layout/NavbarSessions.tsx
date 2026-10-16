@@ -1,0 +1,102 @@
+'use client';
+
+import Link from 'next/link';
+import { useParams, useRouter } from 'next/navigation';
+import { ActionIcon, Box, Group, Menu, NavLink, Skeleton, Stack, Text } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
+import { IconDots, IconMessage, IconTrash } from '@tabler/icons-react';
+import { useChatSessions, useDeleteSession } from '@/hooks/useChat';
+import { confirmDelete } from '@/components/common/confirmDelete';
+
+export function NavbarSessions() {
+  const router = useRouter();
+  const params = useParams<{ sessionId?: string }>();
+  const { data: sessions, isLoading, isError } = useChatSessions();
+  const deleteSession = useDeleteSession();
+
+  const handleDelete = (id: string) =>
+    confirmDelete({
+      title: 'Hapus sesi chat?',
+      message: 'Riwayat percakapan sesi ini akan dihapus.',
+      onConfirm: () =>
+        deleteSession.mutate(id, {
+          onSuccess: () => {
+            notifications.show({ color: 'teal', message: 'Sesi chat dihapus.' });
+            if (params.sessionId === id) router.push('/chat');
+          },
+          onError: (err) => notifications.show({ color: 'red', title: 'Gagal menghapus', message: err.message }),
+        }),
+    });
+
+  if (isLoading) {
+    return (
+      <Stack gap={6}>
+        {Array.from({ length: 4 }, (_, i) => (
+          <Skeleton key={i} h={40} radius="md" />
+        ))}
+      </Stack>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Text size="xs" c="var(--app-danger-text)" px="xs">
+        Gagal memuat riwayat chat.
+      </Text>
+    );
+  }
+
+  if (!sessions?.length) {
+    return (
+      <Text size="xs" c="dimmed" px="xs">
+        Belum ada percakapan.
+      </Text>
+    );
+  }
+
+  return (
+    <Stack gap={2}>
+      {sessions.map((session) => (
+        <Group key={session.id} gap={0} wrap="nowrap" pos="relative">
+          <NavLink
+            component={Link}
+            href={`/chat/${session.id}`}
+            active={params.sessionId === session.id}
+            variant="light"
+            leftSection={<IconMessage size={16} aria-hidden />}
+            label={
+              <Text size="sm" truncate>
+                {session.last_message_snippet || 'Percakapan baru'}
+              </Text>
+            }
+            description={
+              <Text size="xs" c="dimmed" truncate>
+                {session.document_filename ?? 'Dokumen'}
+              </Text>
+            }
+            style={{ borderRadius: 'var(--mantine-radius-md)' }}
+            pr={36}
+          />
+          <Box pos="absolute" right={4}>
+            <Menu position="bottom-end" withinPortal>
+              <Menu.Target>
+                <ActionIcon size="sm" aria-label="Opsi sesi chat">
+                  <IconDots size={16} aria-hidden />
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item
+                  color="red"
+                  leftSection={<IconTrash size={14} aria-hidden />}
+                  onClick={() => handleDelete(session.id)}
+                >
+                  Hapus
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+          </Box>
+        </Group>
+      ))}
+    </Stack>
+  );
+}

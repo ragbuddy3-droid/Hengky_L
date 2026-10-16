@@ -1,0 +1,20 @@
+import type { ChatMessage, ChatSession, ChatSessionListItem } from '@/types/chat';
+import { request } from './client';
+
+export const chatApi = {
+  listSessions: (documentId?: string) =>
+    request<ChatSessionListItem[]>('/chat/sessions', { query: { document_id: documentId } }),
+
+  getSession: (sessionId: string) => request<ChatSessionListItem>(`/chat/sessions/${sessionId}`),
+
+  createSession: (documentId: string) =>
+    request<ChatSession>('/chat/sessions', { method: 'POST', json: { document_id: documentId } }),
+
+  removeSession: (sessionId: string) =>
+    request<{ status: string }>(`/chat/sessions/${sessionId}`, { method: 'DELETE' }),
+
+  messages: (sessionId: string) => request<ChatMessage[]>(`/chat/sessions/${sessionId}/messages`),
+
+  sendMessage: (sessionId: string, content: string) =>
+    request<ChatMessage>(`/chat/sessions/${sessionId}/messages`, { method: 'POST', json: { content } }),
+};

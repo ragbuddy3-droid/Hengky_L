@@ -13,4 +13,5 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - UI library: **Mantine 9** (`@mantine/core`, `dropzone`, `hooks`, `notifications`). Look up props with the `mantine` MCP server (it serves v9 docs, matching what is installed).
 - Package manager: **bun**. Type-check with `bunx tsc --noEmit`, lint with `bun run lint` (ESLint 9 flat config in `eslint.config.mjs`).
 - Components that pass functions as props (e.g. `<Button component={Link}>`) must live in a `'use client'` file.
-- API client: `src/lib/api.ts`; types mirror backend Pydantic schemas in `src/types/`.
+- API client: `src/lib/api/*` (fetch wrapper in `client.ts`); types mirror backend Pydantic schemas in `src/types/`. Data fetching via TanStack Query hooks in `src/hooks/`; query keys in `src/lib/query-keys.ts`.
+- Theme tokens (teal primary, `accent` orange for the main CTA, Bloom colors) live in `src/theme/theme.ts`. Redesign plan: `REDESIGN_PLAN.md`.

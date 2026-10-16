@@ -1,3 +1,5 @@
+// Mirror of backend/src/app/schemas/api_schemas.py (Question*)
+
 export interface QuestionOption {
   label: string;
   text: string;
@@ -13,13 +15,25 @@ export interface AnswerElement {
   weight: number;
 }
 
+export interface UsedChunk {
+  id: string;
+  document_id: string;
+  text: string;
+  category: string;
+  section_heading?: string | null;
+  chapter?: string | null;
+  page_number?: number | null;
+  chunk_index?: number | null;
+  section_type?: string | null;
+}
+
 export interface PromptTraceItem {
   stage_name: string;
   step_number: number;
   attempt_number: number;
   prompt_sent: string;
   raw_response: string;
-  parsed_output?: Record<string, any> | null;
+  parsed_output?: Record<string, unknown> | null;
   latency_ms: number;
   status: string;
   error_message?: string | null;
@@ -28,42 +42,44 @@ export interface PromptTraceItem {
 export interface ValidationLog {
   id: string;
   attempt_number: number;
-  layer: 'grounding' | 'judge' | 'pre_check' | string;
+  layer: 'pre_check' | 'grounding' | 'judge' | (string & {});
   score_or_verdict: string;
-  feedback?: string;
-  aspect_evaluations?: Record<string, any> | string | null;
-  created_at?: string;
+  feedback?: string | null;
+  aspect_evaluations?: Record<string, unknown> | string | null;
+  created_at?: string | null;
 }
 
-export interface UsedChunk {
-  id: string;
-  document_id: string;
-  text: string;
-  category: string;
-  section_heading?: string;
-  chapter?: string;
-  page_number?: number;
-  chunk_index?: number;
-  section_type?: string;
-}
+export type QuestionType = 'esai' | 'esai_pendek' | 'isian_singkat' | (string & {});
+export type QuestionStatus = 'final' | 'needs_review' | (string & {});
 
+/** GET /questions */
 export interface Question {
   id: string;
-  session_id?: string;
-  question_type?: 'esai' | 'isian_singkat' | string;
+  session_id?: string | null;
+  document_id?: string | null;
+  document_filename?: string | null;
+  question_type: QuestionType;
   question_text: string;
-  options?: Record<string, string> | QuestionOption[] | null;
+  options?: QuestionOption[] | null;
   answer_key: string;
-  explanation?: string;
-  source_reference?: string;
+  explanation?: string | null;
+  source_reference?: string | null;
   bloom_level: string;
-  status: 'final' | 'needs_review';
+  status: QuestionStatus;
   refinement_count: number;
-  knowledge_point?: string;
-  grounding_evidence?: string;
-  rubric?: RubricCriterion[];
-  answer_elements?: AnswerElement[];
-  prompt_traces?: PromptTraceItem[];
-  validation_logs?: ValidationLog[];
-  used_chunks?: UsedChunk[];
+  knowledge_point?: string | null;
+  grounding_evidence?: string | null;
+  rubric?: RubricCriterion[] | null;
+  answer_elements?: AnswerElement[] | null;
+  source_chunks: string[];
+  used_chunks: UsedChunk[];
+  quality_warnings?: string[] | null;
+}
+
+/** GET /questions/{id} */
+export interface QuestionDetail extends Omit<Question, 'options' | 'source_chunks' | 'document_id' | 'document_filename'> {
+  session_id: string;
+  options?: Record<string, unknown> | unknown[] | null;
+  prompt_traces?: PromptTraceItem[] | null;
+  validation_logs: ValidationLog[];
 }
