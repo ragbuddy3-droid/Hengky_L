@@ -14,7 +14,9 @@ llm:
   generator_model: "Qwen/Qwen2.5-72B-Instruct"
   judge_model: "meta-llama/Llama-3.3-70B-Instruct-Turbo"
   embedding_model: "BAAI/bge-m3"
-  max_tokens: 4096
+  max_tokens: 2048  # every stage returns a small JSON object
+  request_timeout: 60
+  max_retries: 2
 
 validation:
   fast_reject_threshold: 0.40
@@ -31,6 +33,10 @@ retrieval:
   hybrid_dense_weight: 0.6
   hybrid_sparse_weight: 0.4
   reranker_enabled: false
+
+generation:
+  concurrency: 8
+  max_context_chunks: 10
 
 chunking:
   strategy: "fixed"

@@ -38,19 +38,23 @@ def test_settings_pure_yaml():
 
 def test_deepinfra_chat_model_initialization():
     """Verify get_chat_model initializes ChatOpenAI with DeepInfra and JSON structured output."""
+    from app.core.config import get_settings
     from app.graph.nodes import get_chat_model
+
+    settings = get_settings()
 
     gen_model = get_chat_model(is_judge=False)
     assert gen_model.model_name == "Qwen/Qwen2.5-72B-Instruct"
     assert "deepinfra.com" in str(gen_model.openai_api_base)
     assert gen_model.model_kwargs.get("response_format") == {"type": "json_object"}
-    assert gen_model.max_tokens == 4096
+    assert gen_model.max_tokens == settings.MAX_TOKENS
+    assert gen_model.request_timeout == settings.LLM_REQUEST_TIMEOUT
 
     judge_model = get_chat_model(is_judge=True)
     assert judge_model.model_name == "meta-llama/Llama-3.3-70B-Instruct-Turbo"
     assert "deepinfra.com" in str(judge_model.openai_api_base)
     assert judge_model.model_kwargs.get("response_format") == {"type": "json_object"}
-    assert judge_model.max_tokens == 4096
+    assert judge_model.max_tokens == settings.MAX_TOKENS
 
 
 def test_fixed_chunker():

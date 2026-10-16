@@ -1,10 +1,19 @@
 """Pydantic schemas for API interactions with Multi-Stage AQG support."""
 
 import json
-from datetime import datetime
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+GenerationStatus = Literal["idle", "running", "done", "failed"]
+
+
+def as_utc(v: datetime | None) -> datetime | None:
+    """SQLite menyimpan DateTime tanpa zona waktu; nilai di DB selalu UTC (lihat `utcnow`)."""
+    if isinstance(v, datetime) and v.tzinfo is None:
+        return v.replace(tzinfo=UTC)
+    return v
 
 
 class DocumentUploadResponse(BaseModel):
@@ -46,6 +55,9 @@ class ChatSessionListItem(BaseModel):
     message_count: int = 0
     last_message_snippet: str | None = None
     created_at: str | None = None
+    generation_status: GenerationStatus = "idle"
+    generation_count: int | None = None
+    generation_message_id: str | None = None
 
 
 class ChatMessageCreate(BaseModel):
@@ -59,6 +71,10 @@ class ChatMessageResponse(BaseModel):
     created_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("created_at", mode="after")
+    def ensure_utc(cls, v: datetime | None) -> datetime | None:
+        return as_utc(v)
 
 
 class GenerateParams(BaseModel):
@@ -133,6 +149,9 @@ class ValidationLogResponse(BaseModel):
 
 class QuestionResponse(BaseModel):
     id: str
+    session_id: str | None = None
+    document_id: str | None = None
+    document_filename: str | None = None
     question_type: str = "esai"
     question_text: str
     options: list[QuestionOption] | None = []

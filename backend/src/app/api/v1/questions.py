@@ -6,7 +6,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Query
 
 from app.core.database import get_session
-from app.models.db_models import Chunk, Question, ValidationLog
+from app.models.db_models import ChatSession, Chunk, Document, Question, ValidationLog
 from app.schemas.api_schemas import (
     QuestionDetailResponse,
     QuestionResponse,
@@ -101,16 +101,22 @@ def get_question(question_id: str):
 
 
 @router.get("/", response_model=list[QuestionResponse])
-def list_questions(session_id: str | None = Query(None)):
-    """List questions, filterable by session_id."""
+def list_questions(session_id: str | None = Query(None), document_id: str | None = Query(None)):
+    """List questions, filterable by session_id and/or document_id (the book the session was opened on)."""
     with get_session() as db:
-        query = db.query(Question)
+        query = (
+            db.query(Question, ChatSession.document_id, Document.filename)
+            .join(ChatSession, Question.session_id == ChatSession.id)
+            .outerjoin(Document, ChatSession.document_id == Document.id)
+        )
         if session_id:
             query = query.filter(Question.session_id == session_id)
-        questions = query.order_by(Question.created_at.desc()).all()
+        if document_id:
+            query = query.filter(ChatSession.document_id == document_id)
+        rows = query.order_by(Question.created_at.desc()).all()
 
         result = []
-        for q in questions:
+        for q, doc_id, doc_filename in rows:
             opts = None
             if q.options:
                 try:
@@ -121,6 +127,9 @@ def list_questions(session_id: str | None = Query(None)):
             result.append(
                 QuestionResponse(
                     id=q.id,
+                    session_id=q.session_id,
+                    document_id=doc_id,
+                    document_filename=doc_filename,
                     question_type=getattr(q, "question_type", "esai") or "esai",
                     question_text=q.question_text,
                     options=opts,

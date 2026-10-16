@@ -65,6 +65,10 @@ class ChatSession(Base):
 
     id = Column(String, primary_key=True, default=generate_uuid)
     document_id = Column(String, ForeignKey("documents.id"), nullable=False, index=True)
+    # Status generasi soal di latar belakang: idle / running / done / failed
+    generation_status = Column(String, nullable=False, default="idle")
+    generation_count = Column(Integer, nullable=True)  # Jumlah soal yang diminta pada generasi terakhir
+    generation_message_id = Column(String, nullable=True)  # Pesan asisten "Sedang membuat..." milik generasi terakhir
     created_at = Column(DateTime, default=utcnow)
 
     document = relationship("Document", back_populates="chat_sessions")

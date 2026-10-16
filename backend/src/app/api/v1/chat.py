@@ -5,6 +5,7 @@ import re
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
+from app.core.config import get_settings
 from app.core.database import get_session
 from app.graph.workflow import get_aqg_graph
 from app.models.db_models import ChatMessage, ChatSession
@@ -93,6 +94,12 @@ def _parse_generation_params(text: str) -> GenerateParams:
     return GenerateParams(num_questions=num_questions, chapter=chapter, bloom_level=bloom_level)
 
 
+def _set_generation_status(session_id: str, status: str) -> None:
+    with get_session() as db:
+        db.query(ChatSession).filter(ChatSession.id == session_id).update({ChatSession.generation_status: status})
+        db.commit()
+
+
 
 async def background_generate_questions(session_id: str, content: str, params: GenerateParams):
     """Background task to generate questions via the compiled LangGraph StateGraph."""
@@ -117,26 +124,31 @@ async def background_generate_questions(session_id: str, content: str, params: G
             "retrieved_chunks": [],
             "source_chunk_ids": [],
             "chat_history": "",
-            "content_analysis": {},
-            "cognitive_plan": {},
-            "question_blueprint": {},
             "raw_questions": [],
-            "current_q_index": 0,
-            "current_question": {},
-            "current_attempt": 1,
-            "max_attempts": 3,
-            "failed_stage": "none",
-            "judge_evaluation": None,
-            "stage_traces": [],
-            "validation_logs": [],
+            "spare_items": [],
+            "stage_cache": {},
+            "top_up_done": False,
+            "validated_questions": [],
             "finalized_questions": [],
             "error": None,
         }
 
         graph = get_aqg_graph()
-        final_state = await graph.ainvoke(initial_state)
+        final_state = await graph.ainvoke(
+            initial_state,
+            config={"max_concurrency": get_settings().GENERATION_CONCURRENCY},
+        )
 
         questions = final_state.get("finalized_questions", [])
+        if not questions:
+            reason = final_state.get("error") or "Tidak ada soal yang berhasil dibuat dari materi ini."
+            with get_session() as db:
+                manager = ChatStateManager(session_id, db)
+                manager.add_message("assistant", f"Maaf, soal belum dapat dibuat: {reason}")
+                db.commit()
+            _set_generation_status(session_id, "failed")
+            return
+
         num_final = sum(1 for q in questions if q.get("status") == "final")
         num_review = sum(1 for q in questions if q.get("status") == "needs_review")
 
@@ -166,7 +178,7 @@ async def background_generate_questions(session_id: str, content: str, params: G
             manager.add_message("assistant", summary_msg)
             db.commit()
             logger.info("[Background] Saved LangGraph completion message for session_id='%s'", session_id)
-
+        _set_generation_status(session_id, "done")
 
     except Exception as e:
         logger.error("[Background] Question generation failed for session_id='%s': %s",
@@ -175,6 +187,24 @@ async def background_generate_questions(session_id: str, content: str, params: G
             manager = ChatStateManager(session_id, db)
             manager.add_message("assistant", f"Maaf, terjadi kesalahan saat membuat soal: {e!s}")
             db.commit()
+        _set_generation_status(session_id, "failed")
+
+
+def _session_item(s: ChatSession) -> ChatSessionListItem:
+    last_msg = s.messages[-1].content if s.messages else None
+    if last_msg and len(last_msg) > 60:
+        last_msg = last_msg[:60] + "..."
+    return ChatSessionListItem(
+        id=s.id,
+        document_id=s.document_id,
+        document_filename=s.document.filename if s.document else None,
+        message_count=len(s.messages) if s.messages else 0,
+        last_message_snippet=last_msg,
+        created_at=s.created_at.strftime("%Y-%m-%d %H:%M") if s.created_at else None,
+        generation_status=s.generation_status or "idle",
+        generation_count=s.generation_count,
+        generation_message_id=s.generation_message_id,
+    )
 
 
 @router.get("/sessions", response_model=list[ChatSessionListItem])
@@ -184,28 +214,17 @@ def list_sessions(document_id: str | None = None):
         query = db.query(ChatSession)
         if document_id:
             query = query.filter(ChatSession.document_id == document_id)
-        sessions = query.order_by(ChatSession.created_at.desc()).all()
+        return [_session_item(s) for s in query.order_by(ChatSession.created_at.desc()).all()]
 
-        result = []
-        for s in sessions:
-            created_str = s.created_at.strftime("%Y-%m-%d %H:%M") if s.created_at else None
-            msg_count = len(s.messages) if s.messages else 0
-            last_msg = None
-            if s.messages:
-                last_msg = s.messages[-1].content
-                if last_msg and len(last_msg) > 60:
-                    last_msg = last_msg[:60] + "..."
 
-            doc_name = s.document.filename if s.document else None
-            result.append(ChatSessionListItem(
-                id=s.id,
-                document_id=s.document_id,
-                document_filename=doc_name,
-                message_count=msg_count,
-                last_message_snippet=last_msg,
-                created_at=created_str
-            ))
-        return result
+@router.get("/sessions/{session_id}", response_model=ChatSessionListItem)
+def get_session_detail(session_id: str):
+    """Get one chat session, including its question generation status (for polling)."""
+    with get_session() as db:
+        session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Sesi chat tidak ditemukan")
+        return _session_item(session)
 
 
 @router.post("/sessions", response_model=ChatSessionResponse)
@@ -233,30 +252,37 @@ def get_messages(session_id: str):
     """Get all messages in session."""
     with get_session() as db:
         messages = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at).all()
-        return [ChatMessageResponse(id=m.id, role=m.role, content=m.content) for m in messages]
+        return [ChatMessageResponse.model_validate(m) for m in messages]
 
 
 @router.post("/sessions/{session_id}/messages", response_model=ChatMessageResponse)
 def send_message(session_id: str, data: ChatMessageCreate, background_tasks: BackgroundTasks):
     """Send a message to the chat session."""
     with get_session() as db:
+        session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Sesi chat tidak ditemukan")
+
         manager = ChatStateManager(session_id, db)
         manager.add_message("user", data.content)
         db.commit()
 
-
-        is_generation = is_generation_intent(data.content)
-
-        if is_generation:
-            params = _parse_generation_params(data.content)
-            background_tasks.add_task(background_generate_questions, session_id, data.content, params)
-
-            bot_msg = manager.add_message(
-                "assistant",
-                f"Sedang membuat {params.num_questions} soal ({params.bloom_level or 'Beragam Level'}). Mohon tunggu sebentar..."
-            )
-            db.commit()
-            return ChatMessageResponse(id=bot_msg.id, role=bot_msg.role, content=bot_msg.content)
+        if is_generation_intent(data.content):
+            if session.generation_status == "running":
+                reply = "Soal sebelumnya masih dibuat. Mohon tunggu hingga selesai sebelum meminta soal baru."
+            else:
+                params = _parse_generation_params(data.content)
+                bot_msg = manager.add_message(
+                    "assistant",
+                    f"Sedang membuat {params.num_questions} soal ({params.bloom_level or 'Beragam Level'}). Mohon tunggu sebentar..."
+                )
+                session.generation_status = "running"
+                session.generation_count = params.num_questions
+                session.generation_message_id = bot_msg.id
+                db.commit()
+                # Status sudah 'running' di DB sebelum task berjalan, jadi polling tidak melihat celah 'idle'
+                background_tasks.add_task(background_generate_questions, session_id, data.content, params)
+                return ChatMessageResponse.model_validate(bot_msg)
         else:
             ref_content = manager.resolve_reference(data.content)
             if ref_content:
@@ -264,6 +290,6 @@ def send_message(session_id: str, data: ChatMessageCreate, background_tasks: Bac
             else:
                 reply = "Halo! Anda dapat meminta saya untuk membuat soal dari dokumen yang diunggah (contoh: 'Buatkan 5 soal C4 bab 2')."
 
-            bot_msg = manager.add_message("assistant", reply)
-            db.commit()
-            return ChatMessageResponse(id=bot_msg.id, role=bot_msg.role, content=bot_msg.content)
+        bot_msg = manager.add_message("assistant", reply)
+        db.commit()
+        return ChatMessageResponse.model_validate(bot_msg)

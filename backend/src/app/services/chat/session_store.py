@@ -31,6 +31,18 @@ def list_chat_sessions(db: Session, document_id: str | None = None) -> list[Chat
     return query.order_by(ChatSession.created_at.desc()).all()
 
 
+def fail_interrupted_generations(db: Session) -> int:
+    """Generasi berjalan sebagai background task di proses ini; status 'running' saat startup berarti terputus."""
+    count = (
+        db.query(ChatSession)
+        .filter(ChatSession.generation_status == "running")
+        .update({ChatSession.generation_status: "failed"})
+    )
+    if count:
+        logger.warning("Marked %d interrupted generation(s) as failed", count)
+    return count
+
+
 def delete_chat_session(db: Session, session_id: str) -> bool:
     """Delete chat session by ID."""
     session = get_chat_session(db, session_id)

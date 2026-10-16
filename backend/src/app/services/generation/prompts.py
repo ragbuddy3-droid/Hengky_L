@@ -139,6 +139,8 @@ Ketentuan:
 1. Pertanyaan harus dapat dijawab sepenuhnya dari CONTEXT, tidak boleh membutuhkan pengetahuan di luar itu.
 2. Untuk C3-C4, wajib sediakan stimulus_context konkret agar siswa tidak sekadar mengutip definisi.
 3. grounding_evidence harus dapat ditelusuri kembali ke CONTEXT kata per kata.
+4. question_type mengikuti recommended_question_format pada COGNITIVE PLAN.
+5. Uji konsep/fakta materi, BUKAN pengalaman aktivitas kelas siswa.
 
 OUTPUT JSON:
 {{
@@ -169,11 +171,14 @@ Ketentuan Khusus Penulisan Soal SD:
 1. Kesesuaian Kognitif ({target_bloom_level}):
    - Untuk C1/C2: Buat pertanyaan langsung yang jelas dan mudah dipahami.
    - Untuk C3/C4: Sertakan narasi/stimulus situasi sehari-hari yang ramah anak sebelum mengajukan pertanyaan analitis.
-2. Gaya Bahasa: Gunakan Bahasa Indonesia yang sederhana, komunikatif, bersahabat, kalimat pendek, dan tidak ambigu bagi siswa SD.
+2. Gaya Bahasa: Gunakan Bahasa Indonesia yang sederhana, komunikatif, bersahabat, kalimat pendek, dan tidak ambigu bagi siswa SD. Sapa siswa dengan "kamu", bukan "Anda".
 3. Hindari Kata Larangan: Jangan sebut kata 'Bloom', 'C1-C4', 'Bab', atau 'Halaman' di dalam teks soal.
 4. Faktual & Anti-Halusinasi: Semua fakta sains, mekanisme, organ, atau konsep dalam `question` dan `expected_answer` HARUS 100% bersumber dari CONTEXT dan `grounding_evidence`. DILARANG menambahkan fakta ilmiah atau konsep di luar materi yang diberikan.
 5. Jawaban Ideal (expected_answer): Harus 100% didukung fakta materi CONTEXT, dirumuskan dengan kalimat utuh, komunikatif, dan runtut sebagai standar kunci jawaban guru.
 6. Penjelasan (explanation): Berikan penjelasan ringkas dan edukatif mengapa jawaban tersebut benar berdasarkan konsep materi buku.
+7. Soal Mandiri & Jelas: Soal harus bisa dipahami oleh siswa yang membacanya tanpa mengikuti pelajaran di kelas. Sebut langsung nama konsep/objek/peristiwanya. DILARANG merujuk pengalaman kelas seperti "yang telah kamu pelajari", "yang sudah kalian lakukan", "di kelas", "di sekolahmu", atau "aktivitas tadi".
+8. Satu Pertanyaan: Tulis tepat SATU pertanyaan per butir. Jangan menambahkan pertanyaan kedua (contoh salah: "Jelaskan cara bermainnya. Apa tujuannya?").
+9. Akhiri pertanyaan dengan tanda tanya (?), atau dengan titik (.) jika berupa kalimat perintah seperti "Jelaskan ..." / "Sebutkan ...".
 
 OUTPUT JSON:
 {{
@@ -210,7 +215,7 @@ TARGET BLOOM:
 Evaluasi 5 aspek kualitas:
 1. grounding — apakah fakta pada question & expected_answer 100% didukung CONTEXT (tidak ada halusinasi fakta)?
 2. bloom_adherence — evaluasi level kognitif yang SEBENARNYA dituntut soal ini (deteksi ulang secara independen). Apakah cocok dengan TARGET BLOOM? (Catatan: C3/C4 untuk SD membutuhkan skenario/analisis sebab-akibat, bukan hafalan definisi).
-3. bahasa — apakah bahasa jelas, komunikatif, dan ramah anak usia SD (6-12 tahun)?
+3. bahasa — apakah bahasa jelas, komunikatif, ramah anak usia SD (6-12 tahun), berisi SATU pertanyaan, dan mandiri (tidak merujuk "yang telah kamu pelajari/lakukan di kelas")?
 4. answerability — apakah soal dapat dijawab tuntas hanya dengan membaca CONTEXT yang ada?
 5. answer_alignment — apakah expected_answer & explanation menjawab question secara tepat, runtut, dan edukatif?
 
@@ -257,6 +262,7 @@ Ketentuan:
 3. Jika answer_alignment gagal -> sesuaikan expected_answer dan explanation agar konsisten dengan question.
 4. Jangan menambahkan informasi dari luar CONTEXT.
 5. Pertahankan question_type dan cognitive_level yang sama.
+6. Soal harus mandiri dan berisi SATU pertanyaan; jangan merujuk pengalaman kelas ("yang telah kamu pelajari/lakukan", "di kelas", "di sekolahmu").
 
 OUTPUT JSON:
 {{

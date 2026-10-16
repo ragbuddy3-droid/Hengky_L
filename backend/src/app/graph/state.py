@@ -1,11 +1,11 @@
-"""State schema definition for Multi-Stage LangGraph AQG pipeline."""
+"""State schema definitions for Multi-Stage LangGraph AQG pipeline."""
 
 import operator
 from typing import Annotated, Any, TypedDict
 
 
 class AQGState(TypedDict):
-    """Complete state representation for Multi-Stage question generation and validation graph."""
+    """Session-level state: retrieval, candidate generation, fan-out validation, persistence."""
 
     # ── Request / Input Parameters ──
     session_id: str
@@ -21,23 +21,28 @@ class AQGState(TypedDict):
     chat_history: str
 
     # ── Multi-Stage Generation Artifacts ──
-    content_analysis: dict[str, Any]
-    cognitive_plan: dict[str, Any]
-    question_blueprint: dict[str, Any]
-    raw_questions: list[dict[str, Any]]
+    raw_questions: list[dict[str, Any]]  # candidates of the current validation round
+    spare_items: list[dict[str, Any]]  # unused (knowledge point, chunk, bloom) specs for top-up
+    stage_cache: dict[str, Any]  # shared Stage 1/2 outputs + traces reused by the top-up round
+    top_up_done: bool
 
-    # ── Question Validation Tracking ──
-    current_q_index: int
-    current_question: dict[str, Any]
-    current_attempt: int
-    max_attempts: int
-    failed_stage: str | None  # "generation" / "planning" / "none"
-    judge_evaluation: dict[str, Any] | None
-
-    # ── Stage Execution Traces & Logs ──
-    stage_traces: list[dict[str, Any]]
-    validation_logs: Annotated[list[dict[str, Any]], operator.add]
-    finalized_questions: Annotated[list[dict[str, Any]], operator.add]
+    # ── Fan-in of per-question validation results (each item carries its own logs & traces) ──
+    validated_questions: Annotated[list[dict[str, Any]], operator.add]
+    finalized_questions: list[dict[str, Any]]
 
     # ── Errors / Diagnostics ──
     error: str | None
+
+
+class QuestionState(TypedDict):
+    """Per-question validation state. Isolated per candidate, so logs/traces never leak across questions."""
+
+    question: dict[str, Any]
+    context: str  # material the generator used; judge & refinement see the same text
+    session_bloom_level: str | None
+    attempt: int
+    max_attempts: int
+    failed_stage: str  # "generation" / "planning" / "none"
+    judge_evaluation: dict[str, Any] | None
+    validation_logs: list[dict[str, Any]]
+    stage_traces: list[dict[str, Any]]

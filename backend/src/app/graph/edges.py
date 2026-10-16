@@ -1,77 +1,43 @@
-"""Routing and conditional edges for the AQG LangGraph StateGraph."""
+"""Routing and conditional edges for the AQG LangGraph StateGraphs."""
 
 import logging
 
-from langgraph.graph import END
-
-from app.graph.state import AQGState
+from app.graph.state import AQGState, QuestionState
 
 logger = logging.getLogger(__name__)
 
 
-def route_after_generation(state: AQGState) -> str:
-    """Route after generation: proceed to grounding_validation if questions exist, else END."""
-    raw_qs = state.get("raw_questions", [])
-    current_q = state.get("current_question", {})
-    if not raw_qs or not current_q or not current_q.get("question"):
-        logger.warning("[Edge] No raw candidate questions generated -> END")
-        return END
-    logger.info("[Edge] Questions generated successfully (%d candidates) -> grounding_validation", len(raw_qs))
-    return "grounding_validation"
+# ── Per-question validation subgraph ──
 
-
-def route_after_grounding(state: AQGState) -> str:
-    """Route question based on Layer 1 Fast-Reject Grounding Validation result."""
+def route_after_grounding(state: QuestionState) -> str:
+    """Route based on the Layer 1 (pre-check / Fast-Reject grounding) result."""
     logs = state.get("validation_logs", [])
-    if not logs:
-        return "self_refinement"
-
-    last_log = logs[-1]
-    verdict = last_log.get("verdict", "fail")
-    attempt = state.get("current_attempt", 1)
-    max_attempts = state.get("max_attempts", 3)
-
-    if verdict == "pass":
-        logger.info("[Edge] Grounding passed Fast-Reject -> llm_judge_evaluation")
+    if logs and logs[-1].get("verdict") == "pass":
         return "llm_judge_evaluation"
-    else:
-        if attempt >= max_attempts:
-            logger.info("[Edge] Grounding Fast-Reject and attempts exhausted (%d/%d) -> persist_questions", attempt, max_attempts)
-            return "persist_questions"
-        logger.info("[Edge] Grounding Fast-Reject -> self_refinement")
-        return "self_refinement"
+    if state["attempt"] >= state["max_attempts"]:
+        logger.info("[Edge] Layer 1 fail, attempts exhausted (%d/%d) -> finalize", state["attempt"], state["max_attempts"])
+        return "finalize_question"
+    return "self_refinement"
 
 
-def route_after_judge(state: AQGState) -> str:
-    """Route question based on Layer 2 LLM Judge evaluation result."""
+def route_after_judge(state: QuestionState) -> str:
+    """Route based on the Layer 2 LLM Judge result."""
     logs = state.get("validation_logs", [])
-    if not logs:
-        return "self_refinement"
-
-    last_log = logs[-1]
-    verdict = last_log.get("verdict", "fail")
-    attempt = state.get("current_attempt", 1)
-    max_attempts = state.get("max_attempts", 3)
-
-    if verdict == "pass":
-        logger.info("[Edge] Judge pass -> persist_questions")
-        return "persist_questions"
-    else:
-        if attempt >= max_attempts:
-            logger.info("[Edge] Judge fail and attempts exhausted (%d/%d) -> persist_questions", attempt, max_attempts)
-            return "persist_questions"
-        logger.info("[Edge] Judge fail -> self_refinement")
-        return "self_refinement"
+    if logs and logs[-1].get("verdict") == "pass":
+        return "finalize_question"
+    if state["attempt"] >= state["max_attempts"]:
+        logger.info("[Edge] Judge fail, attempts exhausted (%d/%d) -> finalize", state["attempt"], state["max_attempts"])
+        return "finalize_question"
+    return "self_refinement"
 
 
-def route_after_persist(state: AQGState) -> str:
-    """Check whether there are remaining candidate questions to validate."""
-    current_idx = state.get("current_q_index", 0)
-    raw_qs = state.get("raw_questions", [])
+# ── Session graph ──
 
-    if current_idx < len(raw_qs):
-        logger.info("[Edge] Next question (%d/%d) -> grounding_validation", current_idx + 1, len(raw_qs))
-        return "grounding_validation"
-
-    logger.info("[Edge] All %d questions processed -> END", len(raw_qs))
-    return END
+def route_after_review(state: AQGState) -> str:
+    """Top up once if fewer questions passed than requested, otherwise persist."""
+    validated = state.get("validated_questions", [])
+    n_final = sum(1 for q in validated if q.get("status") == "final")
+    if n_final < state.get("num_questions", 5) and not state.get("top_up_done"):
+        logger.info("[Edge] %d/%d passed -> top_up_questions", n_final, state.get("num_questions", 5))
+        return "top_up_questions"
+    return "persist_questions"

@@ -62,6 +62,8 @@ class LLMConfig(BaseModel):
     judge_model: str = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
     embedding_model: str = "BAAI/bge-m3"
     max_tokens: int = 4096
+    request_timeout: int = 60  # seconds per LLM call; a hung call otherwise stalls the whole batch
+    max_retries: int = 2
 
     @field_validator("deepinfra_api_key", mode="before")
     @classmethod
@@ -93,6 +95,11 @@ class RetrievalConfig(BaseModel):
     reranker_enabled: bool = True
 
 
+class GenerationConfig(BaseModel):
+    concurrency: int = 5  # max parallel LLM work items (generation & validation)
+    max_context_chunks: int = 10
+
+
 class ChunkingConfig(BaseModel):
     strategy: str = "fixed"
     fixed_chunk_size: int = 1000
@@ -109,6 +116,7 @@ class Settings(BaseModel):
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
+    generation: GenerationConfig = Field(default_factory=GenerationConfig)
 
     model_config = ConfigDict(extra="ignore")
 
@@ -158,6 +166,14 @@ class Settings(BaseModel):
         return self.llm.max_tokens
 
     @property
+    def LLM_REQUEST_TIMEOUT(self) -> int:
+        return self.llm.request_timeout
+
+    @property
+    def LLM_MAX_RETRIES(self) -> int:
+        return self.llm.max_retries
+
+    @property
     def FAST_REJECT_THRESHOLD(self) -> float:
         return self.validation.fast_reject_threshold
 
@@ -200,6 +216,14 @@ class Settings(BaseModel):
     @property
     def HYBRID_SPARSE_WEIGHT(self) -> float:
         return self.retrieval.hybrid_sparse_weight
+
+    @property
+    def GENERATION_CONCURRENCY(self) -> int:
+        return self.generation.concurrency
+
+    @property
+    def MAX_CONTEXT_CHUNKS(self) -> int:
+        return self.generation.max_context_chunks
 
     @classmethod
     def load_from_yaml(cls, yaml_path: str | None = None) -> "Settings":

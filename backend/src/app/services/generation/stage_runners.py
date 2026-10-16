@@ -34,6 +34,9 @@ from app.services.generation.schemas import (
 
 logger = logging.getLogger(__name__)
 
+# The judge must see the same material the generator used (focus chunk + supporting context).
+JUDGE_CONTEXT_CHARS = 4500
+
 
 # ── Text Cleaning & JSON Extraction Helpers ──
 
@@ -376,7 +379,7 @@ def run_llm_judge(
 ) -> tuple[JudgeEvaluationResult, PromptStageTrace]:
     """Layer 2: Execute LLM-as-Judge Evaluation (Streamlined: Question + Answer + Explanation)."""
     prompt_text = LLM_JUDGE_PROMPT.format(
-        retrieved_context=retrieved_context[:2000],
+        retrieved_context=retrieved_context[:JUDGE_CONTEXT_CHARS],
         grounding_evidence=grounding_evidence or "Teks konteks buku",
         question=question,
         expected_answer=expected_answer,

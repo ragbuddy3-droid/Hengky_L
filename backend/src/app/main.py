@@ -1,5 +1,6 @@
 """FastAPI application entry point (v4 / Clean Architecture with LangGraph)."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -9,11 +10,24 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import router
 from app.core.config import get_settings
-from app.core.database import init_db
+from app.core.database import get_session, init_db
 from app.core.logging_config import setup_logging
+from app.graph.nodes import get_chat_model, get_shared_dense_index
 from app.graph.workflow import get_aqg_graph
+from app.services.chat.session_store import fail_interrupted_generations
 
 logger = logging.getLogger(__name__)
+
+
+def _prewarm_models() -> None:
+    try:
+        dense_idx = get_shared_dense_index()
+        dense_idx.model.encode(["pemanasan model"], normalize_embeddings=True)
+        get_chat_model(is_judge=False)
+        get_chat_model(is_judge=True)
+        logger.info("Embedding and chat models pre-warmed.")
+    except Exception as e:
+        logger.warning("Model pre-warm failed (will load lazily): %s", e)
 
 
 @asynccontextmanager
@@ -37,9 +51,15 @@ async def lifespan(app: FastAPI):
 
     # Initialize Database
     init_db()
+    with get_session() as db:
+        fail_interrupted_generations(db)
+        db.commit()
 
     # Pre-compile LangGraph StateGraph
     get_aqg_graph()
+
+    # Load the embedding model now instead of during the first generation request (~30s)
+    await asyncio.to_thread(_prewarm_models)
 
     yield
     logger.info("RAG-AQG Backend v4 shutting down...")

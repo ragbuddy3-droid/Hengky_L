@@ -207,6 +207,25 @@ def init_db() -> None:
                     conn.execute(text("ALTER TABLE validation_logs ADD COLUMN aspect_evaluations TEXT;"))
                     conn.commit()
 
+                # Migration for chat_sessions table
+                res_sess = conn.execute(text("PRAGMA table_info(chat_sessions);")).fetchall()
+                existing_sess_cols = {row[1] for row in res_sess}
+                if existing_sess_cols:
+                    if "generation_status" not in existing_sess_cols:
+                        logger.info("Migrating database: adding generation_status column to chat_sessions table")
+                        conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN generation_status VARCHAR NOT NULL DEFAULT 'idle';"))
+                        conn.commit()
+
+                    if "generation_count" not in existing_sess_cols:
+                        logger.info("Migrating database: adding generation_count column to chat_sessions table")
+                        conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN generation_count INTEGER;"))
+                        conn.commit()
+
+                    if "generation_message_id" not in existing_sess_cols:
+                        logger.info("Migrating database: adding generation_message_id column to chat_sessions table")
+                        conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN generation_message_id VARCHAR;"))
+                        conn.commit()
+
         except Exception as e:
             logger.warning("Lightweight migration check encountered error (non-fatal): %s", e)
 
