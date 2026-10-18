@@ -37,7 +37,7 @@ export function SourcesTab({ question }: { question: QuestionDetail }) {
                       #{i + 1}
                     </Text>
                     {c.chapter && (
-                      <Badge color="teal" tt="none">
+                      <Badge tt="none">
                         {c.chapter}
                       </Badge>
                     )}

@@ -131,7 +131,7 @@ export function ChunkList({ chunks, isLoading }: { chunks: DocumentChunk[] | und
                   #{(currentPage - 1) * PAGE_SIZE + i + 1}
                 </Text>
                 {chunk.chapter && (
-                  <Badge color="teal" tt="none" maw={260} title={chunk.chapter}>
+                  <Badge tt="none" maw={260} title={chunk.chapter}>
                     {chunk.chapter}
                   </Badge>
                 )}

@@ -19,7 +19,7 @@ export function ExportMenu({ questions, title, compact }: { questions: Question[
 
   const copy = () => {
     clipboard.copy(questionsToMarkdown(questions, { title, includeAnswers: true }));
-    notifications.show({ color: 'teal', message: `${questions.length} soal disalin sebagai Markdown.` });
+    notifications.show({ color: 'green', message: `${questions.length} soal disalin sebagai Markdown.` });
   };
 
   const target = compact ? (

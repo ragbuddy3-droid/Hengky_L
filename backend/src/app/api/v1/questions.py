@@ -45,8 +45,6 @@ def _common_fields(q: Question) -> dict[str, Any]:
         "refinement_count": q.refinement_count,
         "knowledge_point": q.knowledge_point,
         "grounding_evidence": q.grounding_evidence,
-        "rubric": q.rubric,
-        "answer_elements": q.answer_elements,
         "quality_warnings": q.quality_warnings,
     }
 
@@ -76,7 +74,7 @@ def _used_chunks(db: Any, chunk_ids_json: Any) -> list[UsedChunkResponse]:
 
 @router.get("/{question_id}", response_model=QuestionDetailResponse)
 def get_question(question_id: str):
-    """Get question detail with multi-stage prompt traces, rubric, and validation logs."""
+    """Get question detail with multi-stage prompt traces, source chunks, and validation logs."""
     with get_session() as db:
         q = db.query(Question).filter(Question.id == question_id).first()
         if not q:
@@ -91,7 +89,6 @@ def get_question(question_id: str):
 
         return QuestionDetailResponse.model_validate({
             **_common_fields(q),
-            "options": _load_json(q.options),
             "prompt_traces": q.prompt_traces,
             "validation_logs": [ValidationLogResponse.model_validate(log) for log in logs],
             "used_chunks": _used_chunks(db, q.chunk_ids),
@@ -116,7 +113,6 @@ def list_questions(session_id: str | None = Query(None), document_id: str | None
         return [
             QuestionResponse.model_validate({
                 **_common_fields(q),
-                "options": q.options,  # the validator turns stored {label: text} JSON into a list
                 "document_id": doc_id,
                 "document_filename": doc_filename,
                 "chunk_ids": q.chunk_ids or "[]",

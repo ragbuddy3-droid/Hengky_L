@@ -17,18 +17,6 @@ class ChatStateManager:
         self.session_id = session_id
         self.db = db
 
-    def get_history(self, limit: int = 20) -> list[ChatMessage]:
-        """Fetch the most recent messages for the session in chronological order."""
-        results = (
-            self.db.query(ChatMessage)
-            .filter(ChatMessage.session_id == self.session_id)
-            .order_by(ChatMessage.created_at.desc())
-            .limit(limit)
-            .all()
-        )
-        results.reverse()
-        return results
-
     def add_message(self, role: str, content: str) -> ChatMessage:
         """Append a new message to the conversation."""
         msg = ChatMessage(session_id=self.session_id, role=role, content=content)
@@ -36,27 +24,6 @@ class ChatStateManager:
         self.db.flush()
         logger.info("Added chat message (session_id='%s', role='%s', length=%d)", self.session_id, role, len(content))
         return msg
-
-    def get_context_summary(self, max_messages: int = 6) -> str:
-        """Format recent chat history into a prompt-friendly context string."""
-        history = (
-            self.db.query(ChatMessage)
-            .filter(ChatMessage.session_id == self.session_id)
-            .order_by(ChatMessage.created_at.desc())
-            .limit(max_messages)
-            .all()
-        )
-        if not history:
-            return ""
-
-        # Chronological order
-        history.reverse()
-        summary_lines = []
-        for msg in history:
-            role_label = "Pengguna" if msg.role == "user" else "Asisten"
-            summary_lines.append(f"{role_label}: {msg.content}")
-
-        return "\n".join(summary_lines)
 
     def resolve_reference(self, text: str) -> str | None:
         """Resolve references like 'soal nomor 3' to past questions in session."""

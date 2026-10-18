@@ -59,9 +59,7 @@ class QuestionBlueprint(_LenientModel):
     grounding_evidence: str = Field(default="", description="Kutipan persis dari teks buku sebagai bukti grounding")
     stimulus_context: str | None = Field(default=None, description="Skenario/cerita kontekstual nyata untuk C3/C4")
     expected_answer_summary: str = Field(default="", description="Ringkasan inti jawaban ideal yang diharapkan")
-    expected_answer_elements: list[str] = Field(default_factory=list, description="Poin-poin kunci jawaban ideal (opsional)")
     answer_scope: str = Field(default="", description="Batasan panjang dan kedalaman jawaban siswa SD")
-    scoring_criteria: list[str] = Field(default_factory=list, description="Kriteria penskoran (opsional)")
 
     model_config = ConfigDict(extra="ignore")
 
@@ -77,16 +75,6 @@ class BlueprintBatch(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-class AnswerElement(BaseModel):
-    element: str = Field(description="Elemen kunci atau poin jawaban")
-    weight: int | float = Field(default=1, description="Bobot penilaian elemen ini")
-
-
-class RubricCriterion(BaseModel):
-    score: int = Field(description="Skor pencapaian (misal 0, 1, 2)")
-    criteria: str = Field(description="Kriteria pemenuhan untuk mendapatkan skor ini")
-
-
 class QuestionPackage(_LenientModel):
     """Output of Stage 4 — Question Generation Package."""
     question: str = Field(description="Teks pertanyaan untuk siswa SD")
@@ -96,8 +84,6 @@ class QuestionPackage(_LenientModel):
     grounding_evidence: str = Field(default="", description="Kutipan kalimat bukti dari buku")
     expected_answer: str = Field(description="Jawaban ideal yang benar dan konkret")
     explanation: str = Field(default="", description="Penjelasan konteks materi dan alasan jawaban")
-    answer_elements: list[AnswerElement] = Field(default_factory=list, description="Rincian poin kunci jawaban (opsional)")
-    rubric: list[RubricCriterion] = Field(default_factory=list, description="Rubrik penilaian bertingkat (opsional)")
 
     model_config = ConfigDict(extra="ignore")
 

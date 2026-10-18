@@ -110,7 +110,6 @@ def test_stage4_question_package_schema():
     obj = QuestionPackage.model_validate(data)
     assert obj.question.startswith("Jelaskan")
     assert "bilik kiri" in obj.explanation
-    assert len(obj.rubric) == 0
 
 
 def test_llm_judge_evaluation_schema():

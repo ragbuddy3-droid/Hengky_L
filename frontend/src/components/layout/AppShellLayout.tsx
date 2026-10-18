@@ -3,9 +3,10 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { AppShell, Box, Burger, Button, Divider, Group, NavLink, ScrollArea, Text, ThemeIcon } from '@mantine/core';
+import { AppShell, Box, Burger, Button, Divider, Group, NavLink, ScrollArea, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconBooks, IconListCheck, IconMessageCircle, IconPlus, IconSparkles } from '@tabler/icons-react';
+import { IconBooks, IconListCheck, IconMessageCircle, IconPlus } from '@tabler/icons-react';
+import { LogoMark } from '@/components/brand/LogoMark';
 import { ColorSchemeToggle } from './ColorSchemeToggle';
 import { NavbarSessions } from './NavbarSessions';
 
@@ -18,15 +19,13 @@ const NAV_ITEMS = [
 function Brand() {
   return (
     <Group gap="xs" wrap="nowrap">
-      <ThemeIcon size="lg" radius="md" variant="filled">
-        <IconSparkles size={20} aria-hidden />
-      </ThemeIcon>
+      <LogoMark size={34} />
       <Box>
         <Text fw={700} lh={1.1}>
-          AQG
+          Soalnya
         </Text>
         <Text size="xs" c="dimmed" lh={1.1}>
-          Pembuat Soal Otomatis
+          Soal otomatis dari buku
         </Text>
       </Box>
     </Group>

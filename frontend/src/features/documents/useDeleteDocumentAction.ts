@@ -16,7 +16,7 @@ export function useDeleteDocumentAction(onDeleted?: () => void) {
       onConfirm: () =>
         deleteDocument.mutate(doc.id, {
           onSuccess: () => {
-            notifications.show({ color: 'teal', message: `"${doc.filename}" dihapus.` });
+            notifications.show({ color: 'green', message: `"${doc.filename}" dihapus.` });
             onDeleted?.();
           },
           onError: (err) => notifications.show({ color: 'red', title: 'Gagal menghapus', message: err.message }),

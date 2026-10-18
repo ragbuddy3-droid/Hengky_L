@@ -3,7 +3,6 @@ from app.services.chat.session_store import (
     create_session,
     delete_chat_session,
     get_chat_session,
-    list_chat_sessions,
 )
 from app.services.chat.state_manager import ChatStateManager
 
@@ -12,5 +11,4 @@ __all__ = [
     "create_session",
     "delete_chat_session",
     "get_chat_session",
-    "list_chat_sessions",
 ]

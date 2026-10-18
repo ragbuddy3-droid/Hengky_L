@@ -1,16 +1,16 @@
-# RAG-AQG Backend (v4 / backend_new)
+# Soalnya — Backend
 
-Sistem Backend RAG-AQG (Retrieval-Augmented Generation & Automatic Question Generation) berbasis Clean Architecture, FastAPI, LangChain, dan LangGraph.
+Backend Soalnya, sistem RAG-AQG (Retrieval-Augmented Generation for Automatic Question Generation) berbasis FastAPI dan LangGraph.
 
 ## Fitur Utama
-1. **LangGraph StateGraph Workflow**: Orkestrasi 6 node (Retrieval, Question Generation, Grounding Validation, LLM-as-Judge, Self-Refinement, Database Persistence).
-2. **Fixed & Semantic Chunking**: Menggunakan `RecursiveCharacterTextSplitter` dan LangChain `SemanticChunker` dengan model embedding `BAAI/bge-m3`.
-3. **Hybrid Retrieval**: Integrasi dense index (ChromaDB) + sparse index (BM25 Okapi) dengan Reciprocal Rank Fusion (RRF) dan runtime anti-exercise filter.
+1. **LangGraph Workflow**: retrieval konteks → generasi soal multi-stage → validasi per soal (grounding, LLM-as-Judge, self-refinement) → top-up → penyimpanan ke database.
+2. **Fixed-size Chunking**: jendela karakter tetap (`fixed_chunk_size` / `fixed_chunk_overlap` di `configs/settings.yaml`) dengan metadata bab dan heading.
+3. **Hybrid Retrieval**: dense index (ChromaDB, embedding `BAAI/bge-m3`) + sparse index (BM25 Okapi) dengan Reciprocal Rank Fusion dan filter latihan/rubrik penilaian buku.
 4. **Validasi 2-Layer**:
-   - Layer 1: Cosine similarity embedding grounding score (auto-pass >= 0.80).
-   - Layer 2: LLM-as-Judge evaluation untuk rubrik kesesuaian soal SD usia 6-12 tahun.
-5. **Konfigurasi YAML + .env**: Konfigurasi aplikasi di `configs/settings.yaml` dan API token rahasia (`DEEPINFRA_API_KEY`) di `.env`.
-6. **LLM Provider**: Sepenuhnya menggunakan **DeepInfra** (Generation: `Qwen/Qwen3-32B`, LLM-as-a-Judge: `meta-llama/Llama-3.3-70B-Instruct-Turbo`) dengan output terstruktur JSON (`response_format: {"type": "json_object"}`).
+   - Layer 1: grounding similarity (fast-reject di bawah `fast_reject_threshold`).
+   - Layer 2: LLM-as-Judge untuk kesesuaian soal SD usia 6-12 tahun.
+5. **Konfigurasi YAML + .env**: konfigurasi di `configs/settings.yaml`, API key (`DEEPINFRA_API_KEY`) di `.env`.
+6. **LLM Provider**: DeepInfra (model generator dan judge diatur di `configs/settings.yaml`) dengan output JSON terstruktur.
 
 ## Cara Menjalankan
 ```bash

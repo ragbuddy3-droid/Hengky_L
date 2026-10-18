@@ -72,7 +72,7 @@ body {
 :root[data-mantine-color-scheme='dark'] {
   --app-danger-text: var(--mantine-color-red-4);
   --app-success-text: var(--mantine-color-green-4);
-  --app-warning-text: var(--mantine-color-orange-4);
+  --app-warning-text: var(--mantine-color-accent-3);
 }
 
 .hover-chip {

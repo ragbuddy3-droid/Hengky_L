@@ -50,7 +50,7 @@ export function UploadDocumentModal({ opened, onClose }: { opened: boolean; onCl
       {
         onSuccess: () => {
           notifications.show({
-            color: 'teal',
+            color: 'green',
             title: 'Buku diunggah',
             message: `${file.name} sedang diproses. Status akan diperbarui otomatis.`,
           });
@@ -109,7 +109,7 @@ export function UploadDocumentModal({ opened, onClose }: { opened: boolean; onCl
               >
                 <Stack align="center" gap={6} mih={160} justify="center" style={{ pointerEvents: 'none' }}>
                   <Dropzone.Accept>
-                    <IconUpload size={40} color="var(--mantine-color-teal-6)" aria-hidden />
+                    <IconUpload size={40} color="var(--mantine-primary-color-6)" aria-hidden />
                   </Dropzone.Accept>
                   <Dropzone.Reject>
                     <IconX size={40} color="var(--mantine-color-red-6)" aria-hidden />

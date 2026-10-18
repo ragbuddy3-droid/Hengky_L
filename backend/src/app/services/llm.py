@@ -34,7 +34,7 @@ def get_chat_model(is_judge: bool = False, temperature: float | None = None) -> 
         timeout=settings.LLM_REQUEST_TIMEOUT,
         max_retries=settings.LLM_MAX_RETRIES,
         model_kwargs={"response_format": {"type": "json_object"}},
-        default_headers={"HTTP-Referer": "http://localhost:3000", "X-Title": "RAG-AQG"},
+        default_headers={"HTTP-Referer": "http://localhost:3000", "X-Title": "Soalnya"},
     )
     _chat_model_cache[cache_key] = client
     return client

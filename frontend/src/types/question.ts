@@ -1,20 +1,5 @@
 // Mirror of backend/src/app/schemas/api_schemas.py (Question*)
 
-export interface QuestionOption {
-  label: string;
-  text: string;
-}
-
-export interface RubricCriterion {
-  score: number;
-  criteria: string;
-}
-
-export interface AnswerElement {
-  element: string;
-  weight: number;
-}
-
 export interface UsedChunk {
   id: string;
   document_id: string;
@@ -60,7 +45,6 @@ export interface Question {
   document_filename?: string | null;
   question_type: QuestionType;
   question_text: string;
-  options?: QuestionOption[] | null;
   answer_key: string;
   explanation?: string | null;
   source_reference?: string | null;
@@ -69,17 +53,14 @@ export interface Question {
   refinement_count: number;
   knowledge_point?: string | null;
   grounding_evidence?: string | null;
-  rubric?: RubricCriterion[] | null;
-  answer_elements?: AnswerElement[] | null;
   source_chunks: string[];
   used_chunks: UsedChunk[];
   quality_warnings?: string[] | null;
 }
 
 /** GET /questions/{id} */
-export interface QuestionDetail extends Omit<Question, 'options' | 'source_chunks' | 'document_id' | 'document_filename'> {
+export interface QuestionDetail extends Omit<Question, 'source_chunks' | 'document_id' | 'document_filename'> {
   session_id: string;
-  options?: Record<string, unknown> | unknown[] | null;
   prompt_traces?: PromptTraceItem[] | null;
   validation_logs: ValidationLog[];
 }

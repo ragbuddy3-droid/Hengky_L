@@ -49,7 +49,6 @@ def find_yaml_config() -> str:
 class AppConfig(BaseModel):
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
-    frontend_port: int = 3000
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
 
@@ -85,7 +84,6 @@ class DatabaseConfig(BaseModel):
 
 
 class RetrievalConfig(BaseModel):
-    top_k: int = 5
     candidate_top_k: int = 15
     hybrid_dense_weight: float = 0.6
     hybrid_sparse_weight: float = 0.4
@@ -128,10 +126,6 @@ class Settings(BaseModel):
     @property
     def BACKEND_PORT(self) -> int:
         return self.app.backend_port
-
-    @property
-    def FRONTEND_PORT(self) -> int:
-        return self.app.frontend_port
 
     @property
     def CORS_ORIGINS(self) -> list[str]:
@@ -188,10 +182,6 @@ class Settings(BaseModel):
     @property
     def CHROMA_PERSIST_DIR(self) -> str:
         return self.database.chroma_persist_dir
-
-    @property
-    def RETRIEVAL_TOP_K(self) -> int:
-        return self.retrieval.top_k
 
     @property
     def CANDIDATE_TOP_K(self) -> int:

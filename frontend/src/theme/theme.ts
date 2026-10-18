@@ -3,38 +3,38 @@ import { createTheme, type MantineColorsTuple } from '@mantine/core';
 // Palet diambil dari skala Tailwind agar shade 7 (primaryShade) lolos kontras WCAG AA (≥ 4.5:1)
 // untuk teks putih di atas tombol/badge berwarna.
 
-// Teal utama — shade 7 = #0f766e (5.47:1 dengan putih).
-const teal: MantineColorsTuple = [
-  '#f0fdfa',
-  '#ccfbf1',
-  '#99f6e4',
-  '#5eead4',
-  '#2dd4bf',
-  '#14b8a6',
-  '#0d9488',
-  '#0f766e',
-  '#115e59',
-  '#134e4a',
+// Indigo utama — shade 7 = #4338ca (7.9:1 dengan putih).
+const indigo: MantineColorsTuple = [
+  '#eef2ff',
+  '#e0e7ff',
+  '#c7d2fe',
+  '#a5b4fc',
+  '#818cf8',
+  '#6366f1',
+  '#4f46e5',
+  '#4338ca',
+  '#3730a3',
+  '#312e81',
 ];
 
-// Aksen oranye — khusus aksi utama "Buat Soal". Shade 7 = #c2410c (5.18:1 dengan putih).
+// Aksen amber — khusus aksi utama "Buat Soal" dan percikan logo. Shade 7 = #b45309 (5.0:1 dengan putih).
 const accent: MantineColorsTuple = [
-  '#fff7ed',
-  '#ffedd5',
-  '#fed7aa',
-  '#fdba74',
-  '#fb923c',
-  '#f97316',
-  '#ea580c',
-  '#c2410c',
-  '#9a3412',
-  '#7c2d12',
+  '#fffbeb',
+  '#fef3c7',
+  '#fde68a',
+  '#fcd34d',
+  '#fbbf24',
+  '#f59e0b',
+  '#d97706',
+  '#b45309',
+  '#92400e',
+  '#78350f',
 ];
 
 export const theme = createTheme({
-  primaryColor: 'teal',
+  primaryColor: 'indigo',
   primaryShade: { light: 7, dark: 7 },
-  colors: { teal, accent },
+  colors: { indigo, accent },
   fontFamily: 'var(--font-inter), system-ui, sans-serif',
   fontFamilyMonospace: 'var(--font-mono), ui-monospace, monospace',
   headings: { fontFamily: 'var(--font-inter), system-ui, sans-serif', fontWeight: '650' },

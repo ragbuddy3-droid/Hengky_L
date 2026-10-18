@@ -14,4 +14,4 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Package manager: **bun**. Type-check with `bunx tsc --noEmit`, lint with `bun run lint` (ESLint 9 flat config in `eslint.config.mjs`).
 - Components that pass functions as props (e.g. `<Button component={Link}>`) must live in a `'use client'` file.
 - API client: `src/lib/api/*` (fetch wrapper in `client.ts`); types mirror backend Pydantic schemas in `src/types/`. Data fetching via TanStack Query hooks in `src/hooks/`; query keys in `src/lib/query-keys.ts`.
-- Theme tokens (teal primary, `accent` orange for the main CTA, Bloom colors) live in `src/theme/theme.ts`. Redesign plan: `REDESIGN_PLAN.md`.
+- Theme tokens (indigo primary, `accent` amber for the main CTA, Bloom colors) live in `src/theme/theme.ts`. Brand mark: `src/components/brand/LogoMark.tsx` (favicon: `src/app/icon.svg`).

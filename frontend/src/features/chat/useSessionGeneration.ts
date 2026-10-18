@@ -39,7 +39,7 @@ export function useSessionGeneration(sessionId: string) {
 
     const failed = status === 'failed';
     notifications.show({
-      color: failed ? 'red' : 'teal',
+      color: failed ? 'red' : 'green',
       title: failed ? 'Soal gagal dibuat' : 'Soal selesai dibuat',
       message: failed ? 'Lihat pesan terakhir di percakapan untuk penyebabnya.' : 'Lihat hasilnya di panel "Soal di sesi ini".',
     });

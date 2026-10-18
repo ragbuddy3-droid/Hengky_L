@@ -1,13 +1,13 @@
-# RAG-AQG — Testing Program v3
+# Soalnya — Soal otomatis dari buku
 
-Retrieval-Augmented Generation for Automatic Question Generation System.
+Soalnya adalah sistem RAG-AQG (Retrieval-Augmented Generation for Automatic Question Generation): membuat soal dari buku pelajaran dan memvalidasinya terhadap isi buku.
 
 ## Technology Stack
 
 - **Backend**: FastAPI (Python 3.11+), managed by [`uv`](https://github.com/astral-sh/uv).
 - **Frontend**: Next.js (App Router, TypeScript) + Mantine UI (`@mantine/core`), managed by [`bun`](https://bun.sh).
-- **LLM & Embeddings**: Ollama / vLLM local LLM inference + BAAI/bge-m3 dense embeddings + BM25 sparse index.
-- **Vector DB**: Qdrant / ChromaDB.
+- **LLM & Embeddings**: DeepInfra (OpenAI-compatible API) untuk generator dan judge + BAAI/bge-m3 dense embeddings + BM25 sparse index.
+- **Vector DB**: ChromaDB.
 
 ## Project Layout
 

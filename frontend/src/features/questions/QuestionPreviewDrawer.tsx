@@ -47,21 +47,6 @@ export function QuestionPreviewDrawer({ question, onClose }: { question: Questio
             </Alert>
           )}
 
-          {!!question.options?.length && (
-            <Section title="Pilihan">
-              <List size="sm" spacing={4}>
-                {question.options.map((o) => (
-                  <List.Item key={o.label}>
-                    <Text span fw={600}>
-                      {o.label}.
-                    </Text>{' '}
-                    {o.text}
-                  </List.Item>
-                ))}
-              </List>
-            </Section>
-          )}
-
           <Divider />
 
           <Section title="Kunci jawaban">

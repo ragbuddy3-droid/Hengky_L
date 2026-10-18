@@ -11,11 +11,6 @@ from pypdf import PdfReader
 
 logger = logging.getLogger(__name__)
 
-ROMAN_REGEX = re.compile(
-    r'^(i|ii|iii|iv|v|vi|vii|viii|ix|x|xi|xii|xiii|xiv|xv|xvi|xvii|xviii|xix|xx)$',
-    re.IGNORECASE
-)
-
 ROMAN_MAP = {
     'I': '1', 'II': '2', 'III': '3', 'IV': '4', 'V': '5',
     'VI': '6', 'VII': '7', 'VIII': '8', 'IX': '9', 'X': '10',
@@ -114,11 +109,6 @@ def normalize_text_fonts(text: str) -> str:
         fixed_line = re.sub(r'\b([A-Za-z0-9])\s+\1\b', r'\1', fixed_line)
         fixed_lines.append(fixed_line)
     return "\n".join(fixed_lines)
-
-
-def is_roman_numeral(val: str) -> bool:
-    """Check if string is a valid Roman numeral (i to xx)."""
-    return bool(ROMAN_REGEX.match(val.strip().lower()))
 
 
 def parse_toc_from_pages(raw_pages: list[str]) -> list[ChapterInfo]:
@@ -311,42 +301,6 @@ def detect_chapter_running_header(page_norm: str, toc_map: dict[str, ChapterInfo
                 return ChapterInfo(number=num, title="", full_label=f"Bab {num}")
 
     return None
-
-
-def is_front_matter_page(raw_text: str, lines: list[str], page_idx: int) -> bool:
-    """Determine if a page belongs to front matter."""
-    text_norm = normalize_text_fonts(raw_text).lower()
-
-    # 1. Header or title match in top 8 lines
-    for line in lines[:8]:
-        line_clean = normalize_text_fonts(line.strip().lower())
-        if any(fm in line_clean for fm in FRONT_MATTER_TITLES):
-            return True
-
-    # 2. Check if footer contains Roman page number
-    for line in lines[-2:]:
-        for token in line.split():
-            clean_tok = token.strip('.,()|[]')
-            if is_roman_numeral(clean_tok):
-                return True
-
-    # 3. Check for copyright / Ministry info on very early pages
-    if page_idx < 6 and any(kw in text_norm for kw in ['hak cipta', 'kementerian pendidikan', 'isbn', 'sanksi pelanggaran', 'penafian:']):
-        return True
-
-    # 4. Check for icon guides / feature explanation pages in first 20 pages
-    if page_idx < 20:
-        icon_guide_markers = [
-            'ada apa di buku ini', 'petunjuk penggunaan buku', 'penjelasan fitur buku',
-            'tujuan pembelajaran', 'kata kunci', 'siap-siap belajar', 'mari mengamati',
-            'mari bernyanyi', 'mari berkarya', 'mari berlatih', 'uji kemampuanku',
-            'pindai aku', 'pengenalan karakter', 'perkenalan tokoh', 'apersepsi'
-        ]
-        marker_count = sum(1 for marker in icon_guide_markers if marker in text_norm)
-        if marker_count >= 3:
-            return True
-
-    return False
 
 
 def extract_chapter_from_raw_page(raw_text: str) -> str | None:

@@ -51,7 +51,6 @@ class Chunk(Base):
     page_number = Column(Integer, nullable=True)
     chunk_index = Column(Integer, nullable=True)
     section_type = Column(String, nullable=True, default="materi_pokok")
-    embedding_ref = Column(String, nullable=True)
     created_at = Column(DateTime, default=utcnow)
 
     document = relationship("Document", back_populates="chunks")
@@ -117,7 +116,6 @@ class Question(Base):
     chunk_ids = Column(Text, nullable=False)  # JSON-serialized list of chunk IDs
     question_type = Column(String, nullable=False, default="esai")  # esai / isian_singkat
     question_text = Column(Text, nullable=False)
-    options = Column(Text, nullable=True)  # JSON-serialized options (optional)
     answer_key = Column(Text, nullable=False)
     explanation = Column(Text, nullable=True)
     source_reference = Column(Text, nullable=True)
@@ -126,8 +124,6 @@ class Question(Base):
     refinement_count = Column(Integer, default=0, nullable=False)
 
     # Multi-Stage AQG Extensions
-    rubric = Column(Text, nullable=True)  # JSON-serialized rubric criteria tiers
-    answer_elements = Column(Text, nullable=True)  # JSON-serialized answer elements with weights
     grounding_evidence = Column(Text, nullable=True)  # Exact quote from context
     knowledge_point = Column(Text, nullable=True)  # Specific topic/concept point
     prompt_traces = Column(Text, nullable=True)  # JSON-serialized execution trace for each stage

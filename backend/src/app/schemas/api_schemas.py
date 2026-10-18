@@ -83,11 +83,6 @@ class GenerateParams(BaseModel):
     bloom_level: str | None = None
 
 
-class QuestionOption(BaseModel):
-    label: str
-    text: str
-
-
 class UsedChunkResponse(BaseModel):
     id: str
     document_id: str
@@ -100,16 +95,6 @@ class UsedChunkResponse(BaseModel):
     section_type: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
-
-
-class RubricCriterionResponse(BaseModel):
-    score: int
-    criteria: str
-
-
-class AnswerElementResponse(BaseModel):
-    element: str
-    weight: int | float = 1
 
 
 class PromptTraceItemResponse(BaseModel):
@@ -154,7 +139,6 @@ class QuestionResponse(BaseModel):
     document_filename: str | None = None
     question_type: str = "esai"
     question_text: str
-    options: list[QuestionOption] | None = []
     answer_key: str
     explanation: str | None = None
     source_reference: str | None = None
@@ -163,8 +147,6 @@ class QuestionResponse(BaseModel):
     refinement_count: int
     knowledge_point: str | None = None
     grounding_evidence: str | None = None
-    rubric: list[RubricCriterionResponse] | None = []
-    answer_elements: list[AnswerElementResponse] | None = []
     source_chunks: list[str] = Field(default=[], validation_alias="chunk_ids")
     used_chunks: list[UsedChunkResponse] = []
     quality_warnings: list[str] | None = []
@@ -183,46 +165,6 @@ class QuestionResponse(BaseModel):
                 return []
         return v if isinstance(v, list) else []
 
-    @field_validator("options", mode="before")
-    def parse_options(cls, v):
-        if not v:
-            return []
-        if isinstance(v, str):
-            try:
-                parsed = json.loads(v)
-                if isinstance(parsed, dict):
-                    return [{"label": k, "text": str(val)} for k, val in parsed.items()]
-                if isinstance(parsed, list):
-                    return parsed
-                return []
-            except json.JSONDecodeError:
-                return []
-        return v
-
-    @field_validator("rubric", mode="before")
-    def parse_rubric(cls, v: Any) -> list[Any]:
-        if not v:
-            return []
-        if isinstance(v, str):
-            try:
-                parsed = json.loads(v)
-                return parsed if isinstance(parsed, list) else []
-            except (json.JSONDecodeError, TypeError, ValueError):
-                return []
-        return v if isinstance(v, list) else []
-
-    @field_validator("answer_elements", mode="before")
-    def parse_answer_elements(cls, v: Any) -> list[Any]:
-        if not v:
-            return []
-        if isinstance(v, str):
-            try:
-                parsed = json.loads(v)
-                return parsed if isinstance(parsed, list) else []
-            except (json.JSONDecodeError, TypeError, ValueError):
-                return []
-        return v if isinstance(v, list) else []
-
     @field_validator("source_chunks", mode="before")
     def parse_source_chunks(cls, v: Any) -> list[Any]:
         if isinstance(v, str):
@@ -233,17 +175,11 @@ class QuestionResponse(BaseModel):
         return v if isinstance(v, list) else []
 
 
-class QuestionListResponse(BaseModel):
-    questions: list[QuestionResponse]
-    total: int
-
-
 class QuestionDetailResponse(BaseModel):
     id: str
     session_id: str
     question_type: str = "esai"
     question_text: str
-    options: dict[str, Any] | list[Any] | None = None
     answer_key: str
     explanation: str | None = None
     source_reference: str | None = None
@@ -252,8 +188,6 @@ class QuestionDetailResponse(BaseModel):
     refinement_count: int
     knowledge_point: str | None = None
     grounding_evidence: str | None = None
-    rubric: list[RubricCriterionResponse] | None = []
-    answer_elements: list[AnswerElementResponse] | None = []
     prompt_traces: list[PromptTraceItemResponse] | None = []
     validation_logs: list[ValidationLogResponse] = []
     used_chunks: list[UsedChunkResponse] = []
@@ -273,30 +207,6 @@ class QuestionDetailResponse(BaseModel):
                 return []
         return v if isinstance(v, list) else []
 
-    @field_validator("rubric", mode="before")
-    def parse_rubric_detail(cls, v: Any) -> list[Any]:
-        if not v:
-            return []
-        if isinstance(v, str):
-            try:
-                parsed = json.loads(v)
-                return parsed if isinstance(parsed, list) else []
-            except (json.JSONDecodeError, TypeError, ValueError):
-                return []
-        return v if isinstance(v, list) else []
-
-    @field_validator("answer_elements", mode="before")
-    def parse_answer_elements_detail(cls, v: Any) -> list[Any]:
-        if not v:
-            return []
-        if isinstance(v, str):
-            try:
-                parsed = json.loads(v)
-                return parsed if isinstance(parsed, list) else []
-            except (json.JSONDecodeError, TypeError, ValueError):
-                return []
-        return v if isinstance(v, list) else []
-
     @field_validator("prompt_traces", mode="before")
     def parse_prompt_traces_detail(cls, v: Any) -> list[Any]:
         if not v:
@@ -308,14 +218,3 @@ class QuestionDetailResponse(BaseModel):
             except (json.JSONDecodeError, TypeError, ValueError):
                 return []
         return v if isinstance(v, list) else []
-
-
-
-class GenerateRequest(BaseModel):
-    num_questions: int = 5
-    chapter: str | None = None
-    bloom_level: str | None = None
-
-
-class ErrorResponse(BaseModel):
-    detail: str

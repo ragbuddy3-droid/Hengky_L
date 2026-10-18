@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
 
     logger.info("=" * 60)
-    logger.info("RAG-AQG Backend v4 (LangGraph Edition) starting up...")
+    logger.info("Soalnya backend starting up...")
     logger.info("   Generator model : %s", settings.LLM_GENERATOR_MODEL)
     logger.info("   Judge model     : %s", settings.LLM_JUDGE_MODEL)
     logger.info("   Embedding model : %s", settings.EMBEDDING_MODEL)
@@ -63,14 +63,14 @@ async def lifespan(app: FastAPI):
     await asyncio.to_thread(_prewarm_models)
 
     yield
-    logger.info("RAG-AQG Backend v4 shutting down...")
+    logger.info("Soalnya backend shutting down...")
 
 
 settings = get_settings()
 
 app = FastAPI(
-    title="RAG-AQG API v4",
-    description="FastAPI backend for RAG-AQG Automatic Question Generation System with LangChain & LangGraph",
+    title="Soalnya API",
+    description="Soalnya: RAG-based automatic question generation (FastAPI + LangGraph)",
     version="4.0.0",
     lifespan=lifespan
 )

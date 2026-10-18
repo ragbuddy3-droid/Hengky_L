@@ -5,7 +5,6 @@ import { Alert, Anchor, Badge, Breadcrumbs, Button, Group, List, Paper, Skeleton
 import {
   IconAlertTriangle,
   IconBook2,
-  IconClipboardList,
   IconFileSearch,
   IconListCheck,
   IconMessageCircle,
@@ -21,7 +20,6 @@ import { QueryError } from '@/components/common/QueryError';
 import { useQuestion } from '@/hooks/useQuestions';
 import { ApiError } from '@/lib/api/client';
 import { AnswerTab } from './tabs/AnswerTab';
-import { RubricTab } from './tabs/RubricTab';
 import { SourcesTab } from './tabs/SourcesTab';
 import { TracesTab } from './tabs/TracesTab';
 import { ValidationTab } from './tabs/ValidationTab';
@@ -87,7 +85,6 @@ export function QuestionDetailView({ id }: { id: string }) {
   }
 
   const warnings = question.quality_warnings ?? [];
-  const hasRubric = !!(question.rubric?.length || question.answer_elements?.length);
 
   return (
     <PageContainer>
@@ -147,9 +144,6 @@ export function QuestionDetailView({ id }: { id: string }) {
           <Tabs.Tab value="answer" leftSection={<IconListCheck size={16} aria-hidden />}>
             <TabLabel>Soal &amp; Jawaban</TabLabel>
           </Tabs.Tab>
-          <Tabs.Tab value="rubric" leftSection={<IconClipboardList size={16} aria-hidden />}>
-            <TabLabel>{hasRubric ? 'Rubrik' : 'Rubrik (–)'}</TabLabel>
-          </Tabs.Tab>
           <Tabs.Tab value="sources" leftSection={<IconFileSearch size={16} aria-hidden />}>
             <TabLabel count={question.used_chunks?.length}>Sumber</TabLabel>
           </Tabs.Tab>
@@ -163,9 +157,6 @@ export function QuestionDetailView({ id }: { id: string }) {
 
         <Tabs.Panel value="answer">
           <AnswerTab question={question} />
-        </Tabs.Panel>
-        <Tabs.Panel value="rubric">
-          <RubricTab question={question} />
         </Tabs.Panel>
         <Tabs.Panel value="sources">
           <SourcesTab question={question} />

@@ -45,15 +45,6 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
-def get_db() -> Generator[Session, None, None]:
-    """Dependency for FastAPI route handlers."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 @contextmanager
 def get_session() -> Generator[Session, None, None]:
     """Context manager for background tasks and services."""
@@ -112,16 +103,6 @@ def init_db() -> None:
                         conn.execute(text("ALTER TABLE questions ADD COLUMN source_reference TEXT;"))
                         conn.commit()
 
-                    if "rubric" not in existing_cols:
-                        logger.info("Migrating database: adding rubric column to questions table")
-                        conn.execute(text("ALTER TABLE questions ADD COLUMN rubric TEXT;"))
-                        conn.commit()
-
-                    if "answer_elements" not in existing_cols:
-                        logger.info("Migrating database: adding answer_elements column to questions table")
-                        conn.execute(text("ALTER TABLE questions ADD COLUMN answer_elements TEXT;"))
-                        conn.commit()
-
                     if "grounding_evidence" not in existing_cols:
                         logger.info("Migrating database: adding grounding_evidence column to questions table")
                         conn.execute(text("ALTER TABLE questions ADD COLUMN grounding_evidence TEXT;"))
@@ -174,11 +155,6 @@ def init_db() -> None:
                     if "chapter" not in existing_chunk_cols:
                         logger.info("Migrating database: adding chapter column to chunks table")
                         conn.execute(text("ALTER TABLE chunks ADD COLUMN chapter VARCHAR;"))
-                        conn.commit()
-
-                    if "embedding_ref" not in existing_chunk_cols:
-                        logger.info("Migrating database: adding embedding_ref column to chunks table")
-                        conn.execute(text("ALTER TABLE chunks ADD COLUMN embedding_ref VARCHAR;"))
                         conn.commit()
 
                 # Migration for documents table

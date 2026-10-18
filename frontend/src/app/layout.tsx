@@ -12,7 +12,7 @@ const inter = Inter({ subsets: ['latin'], display: 'swap', variable: '--font-int
 const mono = JetBrains_Mono({ subsets: ['latin'], display: 'swap', variable: '--font-mono' });
 
 export const metadata: Metadata = {
-  title: { default: 'AQG — Pembuat Soal Otomatis', template: '%s · AQG' },
+  title: { default: 'Soalnya — Soal otomatis dari buku', template: '%s · Soalnya' },
   description: 'Buat soal secara otomatis dari buku dengan RAG dan validasi berlapis.',
 };
 

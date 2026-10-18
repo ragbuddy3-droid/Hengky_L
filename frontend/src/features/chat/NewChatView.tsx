@@ -3,9 +3,10 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Button, Center, Group, Paper, Select, Skeleton, Stack, Text, ThemeIcon, Title } from '@mantine/core';
+import { Button, Center, Group, Paper, Select, Skeleton, Stack, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconBooks, IconSparkles } from '@tabler/icons-react';
+import { LogoMark } from '@/components/brand/LogoMark';
 import { EmptyState } from '@/components/common/EmptyState';
 import { QueryError } from '@/components/common/QueryError';
 import { useCreateSession } from '@/hooks/useChat';
@@ -84,9 +85,7 @@ export function NewChatView() {
     <Center mih={{ base: 'calc(100dvh - 56px)', sm: '100dvh' }} p="md">
       <Stack w="100%" maw={560} gap="lg">
         <Stack align="center" gap="xs" ta="center">
-          <ThemeIcon size={56} radius="xl" variant="light">
-            <IconSparkles size={28} aria-hidden />
-          </ThemeIcon>
+          <LogoMark size={56} />
           <Title order={1} fz={{ base: 24, sm: 30 }}>
             Buat soal dari buku
           </Title>

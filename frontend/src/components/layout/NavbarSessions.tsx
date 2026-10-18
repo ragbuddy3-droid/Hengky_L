@@ -21,7 +21,7 @@ export function NavbarSessions() {
       onConfirm: () =>
         deleteSession.mutate(id, {
           onSuccess: () => {
-            notifications.show({ color: 'teal', message: 'Sesi chat dihapus.' });
+            notifications.show({ color: 'green', message: 'Sesi chat dihapus.' });
             if (params.sessionId === id) router.push('/chat');
           },
           onError: (err) => notifications.show({ color: 'red', title: 'Gagal menghapus', message: err.message }),

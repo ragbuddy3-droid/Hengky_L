@@ -60,7 +60,7 @@ export function Composer({
               size="lg"
               radius="xl"
               variant="filled"
-              color="teal"
+              color="indigo"
               onClick={submit}
               disabled={!canSend}
               loading={sending}

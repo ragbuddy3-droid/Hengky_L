@@ -216,7 +216,7 @@ export function QuestionBankView() {
     <PageContainer>
       <PageHeader
         title="Bank Soal"
-        description="Semua soal yang telah dibuat. Buka sebuah soal untuk melihat rubrik, sumber, hasil validasi, dan jejak prompt."
+        description="Semua soal yang telah dibuat. Buka sebuah soal untuk melihat jawaban, sumber, hasil validasi, dan jejak prompt."
         actions={questions.length ? <ExportMenu questions={filtered} title={hasFilters ? 'Bank Soal (terfilter)' : 'Bank Soal'} /> : undefined}
       />
       {content}

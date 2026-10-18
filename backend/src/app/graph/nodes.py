@@ -273,9 +273,6 @@ async def _generate_and_validate(
             "bloom_level": level,
             "knowledge_point": q_pkg.knowledge_point or blueprint.knowledge_point or item["point"],
             "grounding_evidence": q_pkg.grounding_evidence or blueprint.grounding_evidence,
-            # Stage 4 no longer asks for a rubric, so these are usually empty; kept when the model fills them
-            "answer_elements": [e.model_dump() for e in q_pkg.answer_elements],
-            "rubric": [r.model_dump() for r in q_pkg.rubric],
             "content_analysis": c_analysis.model_dump(),
             "cognitive_plan": plans[level].model_dump(),
             "question_blueprint": blueprint.model_dump(),
@@ -499,7 +496,6 @@ def _log(attempt: int, layer: str, verdict: str, score_or_verdict: str, feedback
         "score_or_verdict": score_or_verdict,
         "feedback": feedback,
         "aspect_evaluations": aspects,
-        "auto_pass": False,
         "verdict": verdict,
     }
 
@@ -690,8 +686,6 @@ async def self_refinement(state: QuestionState) -> dict[str, Any]:
     q["question"] = new_pkg.question
     q["answer"] = new_pkg.expected_answer
     q["explanation"] = new_pkg.explanation or q.get("explanation", "")
-    q["answer_elements"] = [e.model_dump() for e in new_pkg.answer_elements]
-    q["rubric"] = [r.model_dump() for r in new_pkg.rubric]
 
     return {"question": q, "attempt": attempt, "stage_traces": curr_traces}
 

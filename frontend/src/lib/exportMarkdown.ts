@@ -20,9 +20,6 @@ function questionBlock(q: Question, index: number, includeAnswers: boolean) {
 
   const lines = [`## Soal ${index}`, '', meta, '', q.question_text.trim(), ''];
 
-  for (const o of q.options ?? []) lines.push(`- **${o.label}.** ${o.text}`);
-  if (q.options?.length) lines.push('');
-
   if (includeAnswers) {
     lines.push(`**Kunci jawaban:** ${q.answer_key.trim()}`, '');
     if (q.explanation) lines.push(`**Penjelasan:** ${q.explanation.trim()}`, '');

@@ -23,14 +23,6 @@ def get_chat_session(db: Session, session_id: str) -> ChatSession | None:
     return db.query(ChatSession).filter(ChatSession.id == session_id).first()
 
 
-def list_chat_sessions(db: Session, document_id: str | None = None) -> list[ChatSession]:
-    """List chat sessions with optional document filter."""
-    query = db.query(ChatSession)
-    if document_id:
-        query = query.filter(ChatSession.document_id == document_id)
-    return query.order_by(ChatSession.created_at.desc()).all()
-
-
 def fail_interrupted_generations(db: Session) -> int:
     """Generasi berjalan sebagai background task di proses ini; status 'running' saat startup berarti terputus."""
     count = (

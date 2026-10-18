@@ -1,41 +1,13 @@
 'use client';
 
-import { Divider, Group, List, Paper, Stack, Text } from '@mantine/core';
+import { Divider, Group, Paper, Stack, Text } from '@mantine/core';
 import { CopyTextButton } from '@/components/common/CopyTextButton';
-import type { QuestionDetail, QuestionOption } from '@/types/question';
+import type { QuestionDetail } from '@/types/question';
 import { Section } from '../Section';
 
-/** Opsi detail bisa berupa list {label,text} atau dict {A: "..."}; seragamkan. */
-function normalizeOptions(options: QuestionDetail['options']): QuestionOption[] {
-  if (!options) return [];
-  if (Array.isArray(options)) {
-    return options
-      .filter((o): o is QuestionOption => typeof o === 'object' && o !== null && 'label' in o && 'text' in o)
-      .map((o) => ({ label: String(o.label), text: String(o.text) }));
-  }
-  return Object.entries(options).map(([label, text]) => ({ label, text: String(text) }));
-}
-
 export function AnswerTab({ question }: { question: QuestionDetail }) {
-  const options = normalizeOptions(question.options);
-
   return (
     <Stack gap="lg">
-      {options.length > 0 && (
-        <Section title="Pilihan jawaban">
-          <List spacing={4} size="sm">
-            {options.map((o) => (
-              <List.Item key={o.label}>
-                <Text span fw={600}>
-                  {o.label}.
-                </Text>{' '}
-                {o.text}
-              </List.Item>
-            ))}
-          </List>
-        </Section>
-      )}
-
       <Section title="Kunci jawaban">
         <Paper p="md" bg="var(--mantine-color-green-light)" withBorder={false}>
           <Group align="flex-start" wrap="nowrap" gap="xs">

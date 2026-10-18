@@ -8,7 +8,7 @@ export function CopyTextButton({ value, label = 'Salin' }: { value: string; labe
     <CopyButton value={value} timeout={1500}>
       {({ copied, copy }) => (
         <Tooltip label={copied ? 'Tersalin' : label}>
-          <ActionIcon color={copied ? 'teal' : 'gray'} onClick={copy} aria-label={label}>
+          <ActionIcon color={copied ? 'green' : 'gray'} onClick={copy} aria-label={label}>
             {copied ? <IconCheck size={16} aria-hidden /> : <IconCopy size={16} aria-hidden />}
           </ActionIcon>
         </Tooltip>

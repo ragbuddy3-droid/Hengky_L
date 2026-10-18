@@ -32,7 +32,7 @@ def format_generation_summary(questions: list[dict[str, Any]]) -> str:
     num_review = sum(1 for q in questions if q.get("status") == "needs_review")
 
     parts = [
-        f"Berhasil membuat {len(questions)} soal Multi-Stage RAG-AQG!\n\n",
+        f"Berhasil membuat {len(questions)} soal!\n\n",
         f"• **Lolos Validasi:** {num_final} | **Perlu Tinjauan:** {num_review}\n\n",
     ]
     for idx, q in enumerate(questions, 1):
