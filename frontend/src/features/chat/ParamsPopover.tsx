@@ -7,6 +7,9 @@ import { useDocumentChunks } from '@/hooks/useDocuments';
 import { BLOOM_LEVELS } from '@/theme/theme';
 import { buildGenerationPrompt, chapterNumber } from './prompts';
 
+// Dropdown Select dirender di dalam popover; jika di portal, klik opsinya dianggap klik di luar dan menutup popover.
+const IN_POPOVER = { withinPortal: false } as const;
+
 /** Popover untuk menyusun permintaan soal secara terstruktur (jumlah, level Bloom, bab). */
 export function ParamsPopover({
   documentId,
@@ -52,7 +55,15 @@ export function ParamsPopover({
       <Popover.Dropdown>
         <Stack gap="sm">
           <NumberInput label="Jumlah soal" min={1} max={20} clampBehavior="strict" value={count} onChange={setCount} />
-          <Select label="Level Bloom" placeholder="Beragam level" data={BLOOM_LEVELS} value={bloom} onChange={setBloom} clearable />
+          <Select
+            label="Level Bloom"
+            placeholder="Beragam level"
+            data={BLOOM_LEVELS}
+            value={bloom}
+            onChange={setBloom}
+            clearable
+            comboboxProps={IN_POPOVER}
+          />
           {chapterOptions.length || isLoading ? (
             <Select
               label="Bab"
@@ -63,6 +74,7 @@ export function ParamsPopover({
               clearable
               searchable
               disabled={isLoading}
+              comboboxProps={IN_POPOVER}
             />
           ) : (
             <TextInput
