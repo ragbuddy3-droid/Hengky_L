@@ -3,13 +3,13 @@
 import logging
 from typing import Any
 
-from app.core.config import get_settings
 from app.core.database import get_session
 from app.graph.state import AQGState
 from app.graph.workflow import get_aqg_graph
 from app.models.db_models import ChatSession
 from app.schemas.api_schemas import GenerateParams
 from app.services.chat.state_manager import ChatStateManager
+from app.services.generation import progress
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,6 @@ def _initial_state(session_id: str, document_id: str, content: str, params: Gene
         "retrieved_chunks": [],
         "reserve_chunks": [],
         "source_chunk_ids": [],
-        "raw_questions": [],
         "spare_items": [],
         "stage_cache": {},
         "top_up_done": False,
@@ -79,23 +78,24 @@ async def background_generate_questions(session_id: str, content: str, params: G
             return
         document_id = str(session.document_id)
 
+    progress.start(session_id, params.num_questions)
     try:
-        final_state = await get_aqg_graph().ainvoke(
-            _initial_state(session_id, document_id, content, params),
-            config={"max_concurrency": get_settings().GENERATION_CONCURRENCY},
-        )
+        final_state = await get_aqg_graph().ainvoke(_initial_state(session_id, document_id, content, params))
         questions = final_state.get("finalized_questions", [])
         if not questions:
             reason = final_state.get("error") or "Tidak ada soal yang berhasil dibuat dari materi ini."
             _post_assistant_message(session_id, f"Maaf, soal belum dapat dibuat: {reason}")
             _set_generation_status(session_id, "failed")
+            progress.finish(session_id, "failed", reason)
             return
 
         _post_assistant_message(session_id, format_generation_summary(questions))
         logger.info("[Background] Saved LangGraph completion message for session_id='%s'", session_id)
         _set_generation_status(session_id, "done")
+        progress.finish(session_id, "done")
 
     except Exception as e:
         logger.error("[Background] Question generation failed for session_id='%s': %s", session_id, e, exc_info=True)
         _post_assistant_message(session_id, f"Maaf, terjadi kesalahan saat membuat soal: {e!s}")
         _set_generation_status(session_id, "failed")
+        progress.finish(session_id, "failed", str(e))

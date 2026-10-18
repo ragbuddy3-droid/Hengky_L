@@ -145,10 +145,17 @@ class _Calls:
         self.stage1: list[str] = []
         self.stage3: list[int] = []
         self.stage4_context: list[str] = []
+        self.validated: list[str] = []
 
 
-def _patch_stages(monkeypatch, points_by_text: dict[str, tuple[str, ...]]) -> _Calls:
+def _patch_stages(monkeypatch, points_by_text: dict[str, tuple[str, ...]], status: str = "needs_review") -> _Calls:
     calls = _Calls()
+
+    async def fake_validate(state):
+        # Later candidates take longer, as real judge calls finish at different times
+        await asyncio.sleep(0.05 * int(state["candidate_id"].split("-")[1]))
+        calls.validated.append(state["candidate_id"])
+        return {**state["question"], "status": status, "validation_logs": [], "stage_traces": state["stage_traces"]}
 
     async def fake_stage1(_model, text, _attempt):
         calls.stage1.append(text)
@@ -170,6 +177,7 @@ def _patch_stages(monkeypatch, points_by_text: dict[str, tuple[str, ...]]) -> _C
     monkeypatch.setattr(nodes, "run_stage2_cognitive_planning", fake_stage2)
     monkeypatch.setattr(nodes, "run_stage3_blueprint_batch", fake_stage3_batch)
     monkeypatch.setattr(nodes, "run_stage4_question_generation", fake_stage4)
+    monkeypatch.setattr(nodes, "validate_candidate", fake_validate)
     monkeypatch.setattr(nodes, "get_chat_model", lambda **_: None)
     monkeypatch.setattr(nodes, "load_few_shots", lambda _doc, levels: dict.fromkeys(levels, planner.NO_FEW_SHOT))
     monkeypatch.setattr(nodes, "load_cached_analyses", lambda _ids: {})
@@ -194,7 +202,20 @@ def test_generate_batches_stage3_per_chunk_and_expands_when_short(monkeypatch):
     assert len(calls.stage4_context) == 3
     assert set(calls.stage4_context) == {DENSE_TEXT, text_b}  # each question sees only its own chunk
     assert out["reserve_chunks"] == []
-    assert {q["chunk_id"] for q in out["raw_questions"]} == {"a", "b"}
+    assert {q["chunk_id"] for q in out["validated_questions"]} == {"a", "b"}
+    assert len(calls.validated) == 3  # every candidate is validated right after Stage 4
+
+
+def test_generation_stops_once_enough_questions_are_final(monkeypatch):
+    calls = _patch_stages(monkeypatch, {DENSE_TEXT: ("Fungsi akar", "Proses fotosintesis", "Fungsi daun")}, status="final")
+    state: Any = {
+        "document_id": "doc", "num_questions": 1, "bloom_level": None,
+        "retrieved_chunks": [_chunk("a")], "reserve_chunks": [],
+    }
+    out = asyncio.run(nodes.generate_questions(state))
+
+    assert len(out["validated_questions"]) == 1  # 2 candidates were planned; the second is cancelled
+    assert len(calls.validated) == 1
 
 
 def test_top_up_analyses_reserve_chunk(monkeypatch):
@@ -226,7 +247,7 @@ def test_top_up_analyses_reserve_chunk(monkeypatch):
     assert len(calls.stage1) == 1  # only the reserve chunk is analysed; chunk "a" is cached
     assert [c["id"] for c in out["retrieved_chunks"]] == ["a", "r1"]
     assert out["reserve_chunks"] == []
-    points = {q["knowledge_point"]: q["chunk_id"] for q in out["raw_questions"]}
+    points = {q["knowledge_point"]: q["chunk_id"] for q in out["validated_questions"]}
     assert points["Fungsi akar"] == "r1" and points["Proses fotosintesis"] == "r1"
 
 

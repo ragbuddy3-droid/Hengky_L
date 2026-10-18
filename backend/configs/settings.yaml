@@ -10,17 +10,18 @@ app:
 llm:
   provider: "deepinfra"
   deepinfra_base_url: "https://api.deepinfra.com/v1/openai"
-  # generator_model: "Qwen/Qwen3-32B"
-  generator_model: "Qwen/Qwen2.5-72B-Instruct"
+  # generator_model: "Qwen/Qwen2.5-72B-Instruct"  # ~20 token/s, terlalu lambat untuk rantai multi-stage
+  # generator_model: "Qwen/Qwen3-235B-A22B-Instruct-2507"  # ~20-25 token/s saat paralel, output panjang
+  generator_model: "Qwen/Qwen3-Next-80B-A3B-Instruct"
   judge_model: "meta-llama/Llama-3.3-70B-Instruct-Turbo"
   embedding_model: "BAAI/bge-m3"
   max_tokens: 2048  # every stage returns a small JSON object
-  request_timeout: 60
-  max_retries: 2
+  request_timeout: 45
+  max_retries: 1
 
 validation:
   fast_reject_threshold: 0.40
-  max_refinement_attempts: 3
+  max_refinement_attempts: 2
 
 database:
   url: "sqlite:///./data/rag_aqg.db"

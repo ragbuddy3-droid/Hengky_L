@@ -27,7 +27,7 @@ def test_settings_pure_yaml():
     settings = get_settings()
     assert settings.app.backend_port == 8000
     assert settings.llm.provider == "deepinfra"
-    assert settings.llm.generator_model == "Qwen/Qwen2.5-72B-Instruct"
+    assert settings.llm.generator_model == "Qwen/Qwen3-Next-80B-A3B-Instruct"
     assert settings.llm.judge_model == "meta-llama/Llama-3.3-70B-Instruct-Turbo"
     assert settings.llm.deepinfra_base_url == "https://api.deepinfra.com/v1/openai"
     assert settings.validation.fast_reject_threshold == 0.40
@@ -44,7 +44,7 @@ def test_deepinfra_chat_model_initialization():
     settings = get_settings()
 
     gen_model = get_chat_model(is_judge=False)
-    assert gen_model.model_name == "Qwen/Qwen2.5-72B-Instruct"
+    assert gen_model.model_name == "Qwen/Qwen3-Next-80B-A3B-Instruct"
     assert "deepinfra.com" in str(gen_model.openai_api_base)
     assert gen_model.model_kwargs.get("response_format") == {"type": "json_object"}
     assert gen_model.max_tokens == settings.MAX_TOKENS

@@ -26,7 +26,7 @@ export function ChatSessionView({ sessionId }: { sessionId: string }) {
   const [draft, setDraft] = useState('');
   const [panelOpened, panel] = useDisclosure(false);
 
-  const { sessionQuery, messagesQuery, pending, unreachable } = useSessionGeneration(sessionId);
+  const { sessionQuery, messagesQuery, pending, progress, unreachable } = useSessionGeneration(sessionId);
   const session = sessionQuery.data;
   const sendMessage = useSendMessage(sessionId);
   const deleteSession = useDeleteSession();
@@ -71,7 +71,14 @@ export function ChatSessionView({ sessionId }: { sessionId: string }) {
   }
 
   const pendingCount = pending?.count ?? 0;
-  const panelContent = <SessionQuestionsPanel sessionId={sessionId} pendingCount={pendingCount} documentName={session?.document_filename} />;
+  const panelContent = (
+    <SessionQuestionsPanel
+      sessionId={sessionId}
+      pendingCount={pendingCount}
+      progress={progress}
+      documentName={session?.document_filename}
+    />
+  );
 
   return (
     <Box h={FULL_HEIGHT} display="flex">
@@ -130,6 +137,7 @@ export function ChatSessionView({ sessionId }: { sessionId: string }) {
             messages={messagesQuery.data}
             isLoading={messagesQuery.isLoading}
             pendingMessageId={pending?.messageId ?? null}
+            progress={progress}
             documentName={session?.document_filename}
             onPickPrompt={setDraft}
           />

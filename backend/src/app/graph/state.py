@@ -5,7 +5,7 @@ from typing import Annotated, Any, TypedDict
 
 
 class AQGState(TypedDict):
-    """Session-level state: retrieval, candidate generation, fan-out validation, persistence."""
+    """Session-level state: retrieval, pipelined generation + per-question validation, persistence."""
 
     # ── Request / Input Parameters ──
     session_id: str
@@ -21,12 +21,11 @@ class AQGState(TypedDict):
     source_chunk_ids: list[str]
 
     # ── Multi-Stage Generation Artifacts ──
-    raw_questions: list[dict[str, Any]]  # candidates of the current validation round
     spare_items: list[dict[str, Any]]  # unused (knowledge point, chunk) specs for top-up
     stage_cache: dict[str, Any]  # shared Stage 1/2 outputs + traces reused by the top-up round
     top_up_done: bool
 
-    # ── Fan-in of per-question validation results (each item carries its own logs & traces) ──
+    # ── Per-question validation results, appended by each round (each item carries its own logs & traces) ──
     validated_questions: Annotated[list[dict[str, Any]], operator.add]
     finalized_questions: list[dict[str, Any]]
 
@@ -40,6 +39,8 @@ class QuestionState(TypedDict):
     question: dict[str, Any]
     context: str  # material the generator used; judge & refinement see the same text
     session_bloom_level: str | None
+    session_id: str  # for progress events
+    candidate_id: str
     attempt: int
     max_attempts: int
     failed_stage: str  # "generation" / "planning" / "none"

@@ -1,5 +1,6 @@
 """Async stage runners for the Multi-Stage AQG prompts: every stage shares one invoke -> parse -> trace path."""
 
+import asyncio
 import json
 import logging
 import re
@@ -10,6 +11,7 @@ from typing import Any, TypeVar
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
+from app.core.config import get_settings
 from app.services.generation.prompts import (
     LLM_JUDGE_PROMPT,
     REFINEMENT_PROMPT_A,
@@ -119,6 +121,18 @@ def _compact_content_analysis(ca: ContentAnalysis) -> str:
 
 # ── Generic Stage Execution ──
 
+_llm_slots: tuple[asyncio.AbstractEventLoop, asyncio.Semaphore] | None = None
+
+
+def _llm_semaphore() -> asyncio.Semaphore:
+    """Process-wide cap on LLM calls in flight (generation, judge and refinement share it)."""
+    global _llm_slots
+    loop = asyncio.get_running_loop()
+    if _llm_slots is None or _llm_slots[0] is not loop:
+        _llm_slots = (loop, asyncio.Semaphore(get_settings().GENERATION_CONCURRENCY))
+    return _llm_slots[1]
+
+
 async def _run_stage(
     chat_model: Any,
     persona: str,
@@ -137,7 +151,8 @@ async def _run_stage(
     err_msg = None
 
     try:
-        resp = await chat_model.ainvoke([SystemMessage(content=persona), HumanMessage(content=prompt_text)])
+        async with _llm_semaphore():
+            resp = await chat_model.ainvoke([SystemMessage(content=persona), HumanMessage(content=prompt_text)])
         raw_response = resp.content if isinstance(resp.content, str) else str(resp.content)
         parsed_obj = schema.model_validate(extract_json_object(raw_response))
     except Exception as e:

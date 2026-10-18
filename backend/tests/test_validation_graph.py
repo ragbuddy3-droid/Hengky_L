@@ -68,8 +68,16 @@ def _build_test_graph(monkeypatch, candidates: list[dict[str, Any]]):
         lambda **_: {"score": 0.9, "target": "evidence", "is_evidence_based": True},
     )
     monkeypatch.setattr(workflow, "retrieve_context", lambda state: {"retrieved_chunks": [{"id": "x"}]})
-    monkeypatch.setattr(workflow, "generate_questions", lambda state: {"raw_questions": candidates})
-    monkeypatch.setattr(workflow, "top_up_questions", lambda state: {"raw_questions": [], "top_up_done": True})
+    async def fake_generate(state):
+        # Stands in for the pipeline: each candidate runs its own validation subgraph (3 attempts as before)
+        inputs = [
+            {**nodes._validation_input(q, state["session_id"], None, f"r1-{i}"), "max_attempts": 3}
+            for i, q in enumerate(candidates)
+        ]
+        return {"validated_questions": list(await asyncio.gather(*[nodes.validate_candidate(s) for s in inputs]))}
+
+    monkeypatch.setattr(workflow, "generate_questions", fake_generate)
+    monkeypatch.setattr(workflow, "top_up_questions", lambda state: {"top_up_done": True})
     monkeypatch.setattr(
         workflow, "persist_questions",
         lambda state: {"finalized_questions": state["validated_questions"]},
@@ -82,7 +90,7 @@ def _run(graph) -> dict[str, Any]:
     return asyncio.run(graph.ainvoke({
         "session_id": "s", "document_id": "d", "user_prompt": "Buatkan 3 soal", "chapter": None,
         "bloom_level": None, "num_questions": 3, "retrieved_chunks": [], "source_chunk_ids": [],
-        "reserve_chunks": [], "raw_questions": [], "spare_items": [], "stage_cache": {}, "top_up_done": False,
+        "reserve_chunks": [], "spare_items": [], "stage_cache": {}, "top_up_done": False,
         "validated_questions": [], "finalized_questions": [], "error": None,
     }))
 

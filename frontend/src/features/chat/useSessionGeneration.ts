@@ -6,12 +6,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useChatMessages, useChatSession } from '@/hooks/useChat';
 import { queryKeys } from '@/lib/query-keys';
 import type { GenerationStatus } from '@/types/chat';
+import { useGenerationStream } from './useGenerationStream';
 
 const POLL_MS = 4000;
 
 /**
- * Sesi + pesan + status generasi soal. Selama `generation_status` sesi bernilai 'running', sesi di-poll;
- * begitu berubah ke 'done'/'failed', pesan dan daftar soal di-refresh dan pengguna diberi notifikasi.
+ * Sesi + pesan + status generasi soal. Selama `generation_status` sesi bernilai 'running', progres datang
+ * lewat SSE (dengan polling sesi sebagai cadangan); begitu berubah ke 'done'/'failed', pesan dan daftar
+ * soal di-refresh dan pengguna diberi notifikasi.
  */
 export function useSessionGeneration(sessionId: string) {
   const queryClient = useQueryClient();
@@ -21,6 +23,7 @@ export function useSessionGeneration(sessionId: string) {
   const session = sessionQuery.data;
   const status = session?.generation_status;
   const running = status === 'running';
+  const progress = useGenerationStream(sessionId, running);
 
   // Deteksi transisi 'running' → 'done' / 'failed'.
   const previousStatus = useRef<GenerationStatus | undefined>(undefined);
@@ -49,6 +52,8 @@ export function useSessionGeneration(sessionId: string) {
       running && session?.generation_message_id
         ? { messageId: session.generation_message_id, count: session.generation_count ?? 0 }
         : null,
+    /** Progres langsung dari server selama generasi berjalan. */
+    progress,
     /** Generasi tercatat berjalan, tetapi server tidak bisa dihubungi saat polling. */
     unreachable: running && sessionQuery.isRefetchError,
   };

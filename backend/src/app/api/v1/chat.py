@@ -1,8 +1,12 @@
 """Chat API router v1: sessions, messages, and starting background question generation."""
 
+import asyncio
+import json
 import logging
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.core.database import get_session
 from app.models.db_models import ChatMessage, ChatSession
@@ -16,11 +20,14 @@ from app.schemas.api_schemas import (
 from app.services.chat.intent import is_generation_intent, parse_generation_params
 from app.services.chat.session_store import create_session, delete_chat_session
 from app.services.chat.state_manager import ChatStateManager
+from app.services.generation import progress
 from app.services.generation.runner import background_generate_questions
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+_STREAM_START_WAIT_TICKS = 40  # x 0.25 s
 
 
 def _session_item(s: ChatSession) -> ChatSessionListItem:
@@ -58,6 +65,38 @@ def get_session_detail(session_id: str):
         if not session:
             raise HTTPException(status_code=404, detail="Sesi chat tidak ditemukan")
         return _session_item(session)
+
+
+@router.get("/sessions/{session_id}/generation/stream")
+async def stream_generation(session_id: str):
+    """Server-Sent Events of the running generation: history first, then live events until "done"."""
+    with get_session() as db:
+        session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Sesi chat tidak ditemukan")
+        status = str(session.generation_status or "idle")
+
+    def sse(event: dict) -> str:
+        return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    async def events() -> AsyncIterator[str]:
+        # The background task registers its run right after the request that set 'running' returns
+        for _ in range(_STREAM_START_WAIT_TICKS):
+            if progress.is_active(session_id) or status != "running":
+                break
+            await asyncio.sleep(0.25)
+        if not progress.is_active(session_id):
+            # Nothing in memory (finished long ago, or the server restarted): report the stored status
+            yield sse({"type": "done", "status": "failed" if status == "running" else status})
+            return
+        async for event in progress.subscribe(session_id):
+            yield ": ping\n\n" if event is None else sse(event)
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/sessions", response_model=ChatSessionResponse)
@@ -115,6 +154,7 @@ def send_message(session_id: str, data: ChatMessageCreate, background_tasks: Bac
                     ChatSession.generation_message_id: bot_msg.id,
                 })
                 db.commit()
+                progress.discard(session_id)
                 # Status sudah 'running' di DB sebelum task berjalan, jadi polling tidak melihat celah 'idle'
                 background_tasks.add_task(background_generate_questions, session_id, data.content, params)
                 return ChatMessageResponse.model_validate(bot_msg)

@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Box, Group, Loader, Paper, ScrollArea, Skeleton, Spoiler, Stack, Text, ThemeIcon } from '@mantine/core';
+import { Box, Group, Loader, Paper, Progress, ScrollArea, Skeleton, Spoiler, Stack, Text, ThemeIcon } from '@mantine/core';
 import { IconSparkles } from '@tabler/icons-react';
 import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
 import type { ChatMessage } from '@/types/chat';
 import { EXAMPLE_PROMPTS } from './prompts';
 import { PromptChip } from './PromptChip';
+import type { GenerationProgress } from './useGenerationStream';
 
 function AssistantAvatar() {
   return (
@@ -16,7 +17,15 @@ function AssistantAvatar() {
   );
 }
 
-function MessageBubble({ message, pending }: { message: ChatMessage; pending: boolean }) {
+function MessageBubble({
+  message,
+  pending,
+  progress,
+}: {
+  message: ChatMessage;
+  pending: boolean;
+  progress: GenerationProgress | null;
+}) {
   if (message.role === 'user') {
     return (
       <Group justify="flex-end">
@@ -41,15 +50,28 @@ function MessageBubble({ message, pending }: { message: ChatMessage; pending: bo
       <AssistantAvatar />
       <Paper px="md" py="sm" maw="min(90%, 760px)" miw={0} style={{ borderTopLeftRadius: 'var(--mantine-radius-xs)' }}>
         {pending ? (
-          <Stack gap={6}>
+          <Stack gap={6} miw={{ base: 220, sm: 320 }}>
             <Group gap="xs" wrap="nowrap">
               <Loader size="xs" type="dots" />
               <Text size="sm">{message.content}</Text>
             </Group>
-            <Text size="xs" c="dimmed">
-              Proses mencari materi, menyusun, dan memvalidasi soal biasanya memakan 1–3 menit. Halaman ini diperbarui
-              otomatis.
-            </Text>
+            {progress ? (
+              <>
+                <Progress value={progress.percent} size="sm" animated aria-label="Progres pembuatan soal" />
+                <Group justify="space-between" gap="xs">
+                  <Text size="xs" c="dimmed">
+                    {progress.phaseLabel}
+                  </Text>
+                  <Text size="xs" c="dimmed" ff="monospace">
+                    {progress.finalCount}/{progress.target || '…'} lolos · {progress.percent}%
+                  </Text>
+                </Group>
+              </>
+            ) : (
+              <Text size="xs" c="dimmed">
+                Soal yang sudah jadi langsung muncul di panel &quot;Soal di sesi ini&quot;.
+              </Text>
+            )}
           </Stack>
         ) : (
           <Spoiler maxHeight={360} showLabel="Tampilkan semua" hideLabel="Ringkas">
@@ -88,12 +110,14 @@ export function MessageList({
   messages,
   isLoading,
   pendingMessageId,
+  progress,
   documentName,
   onPickPrompt,
 }: {
   messages: ChatMessage[] | undefined;
   isLoading: boolean;
   pendingMessageId: string | null;
+  progress: GenerationProgress | null;
   documentName?: string | null;
   onPickPrompt: (prompt: string) => void;
 }) {
@@ -118,7 +142,7 @@ export function MessageList({
         ) : (
           <Stack gap="md" role="log" aria-live="polite" aria-label="Riwayat percakapan">
             {messages!.map((m) => (
-              <MessageBubble key={m.id} message={m} pending={m.id === pendingMessageId} />
+              <MessageBubble key={m.id} message={m} pending={m.id === pendingMessageId} progress={progress} />
             ))}
           </Stack>
         )}

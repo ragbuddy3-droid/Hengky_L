@@ -1,10 +1,11 @@
 """LangGraph node implementations for Multi-Stage RAG-AQG generation, 2-layer validation, and persistence.
 
-Session-level nodes (AQGState): retrieve_context -> generate_questions -> [fan-out] validate_question
--> review_results -> (top_up_questions -> [fan-out] validate_question ->) persist_questions.
+Session-level nodes (AQGState): retrieve_context -> generate_questions -> review_results
+-> (top_up_questions -> review_results ->) persist_questions.
 
-Per-question nodes (QuestionState, run inside the validation subgraph for each candidate in parallel):
-grounding_validation -> llm_judge_evaluation <-> self_refinement -> finalize_question.
+Generation is pipelined per question: as soon as a candidate leaves Stage 4 it enters its own run of the
+validation subgraph (QuestionState): grounding_validation -> llm_judge_evaluation <-> self_refinement
+-> finalize_question. Once enough candidates are final, the remaining ones are cancelled.
 
 The nodes only orchestrate; retrieval, planning, prompting, and persistence live in app.services.
 """
@@ -20,6 +21,7 @@ from typing import Any, TypeVar
 
 from app.core.config import get_settings
 from app.graph.state import AQGState, QuestionState
+from app.services.generation import progress
 from app.services.generation.analysis_cache import load_cached_analyses, store_analyses
 from app.services.generation.planner import (
     NO_FEW_SHOT,
@@ -98,15 +100,9 @@ def _timed(node_name: str):
     return decorator
 
 
-async def _gather_limited(coros: list[Awaitable[R]]) -> list[R]:
-    """asyncio.gather with at most GENERATION_CONCURRENCY LLM calls in flight."""
-    semaphore = asyncio.Semaphore(get_settings().GENERATION_CONCURRENCY)
-
-    async def _run(coro: Awaitable[R]) -> R:
-        async with semaphore:
-            return await coro
-
-    return list(await asyncio.gather(*[_run(c) for c in coros]))
+async def _gather(coros: list[Awaitable[R]]) -> list[R]:
+    """asyncio.gather as a list; LLM concurrency is capped inside the stage runners."""
+    return list(await asyncio.gather(*coros))
 
 
 def _count_final(questions: list[dict[str, Any]]) -> int:
@@ -127,7 +123,9 @@ def _copy_cache(stage_cache: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def _ensure_analyses(chunks: list[dict[str, Any]], stage_cache: dict[str, Any]) -> dict[str, Any]:
+async def _ensure_analyses(
+    chunks: list[dict[str, Any]], stage_cache: dict[str, Any], session_id: str | None = None,
+) -> dict[str, Any]:
     """Stage 1 for chunks not in the cache yet: reuse the persistent per-chunk cache, call the LLM for the rest.
 
     Stage 1 runs once per chunk so every knowledge point keeps its source chunk. Returns a new cache.
@@ -141,8 +139,9 @@ async def _ensure_analyses(chunks: list[dict[str, Any]], stage_cache: dict[str, 
     cache["analyses"].update(stored)
     to_run = [c for c in missing if c["id"] not in stored]
     if to_run:
+        progress.phase(session_id, "analysis", f"Menganalisis {len(to_run)} bagian materi…")
         analysis_model = get_chat_model(is_judge=False, temperature=0.1)
-        stage1 = await _gather_limited([
+        stage1 = await _gather([
             run_stage1_context_understanding(analysis_model, c.get("text", ""), 1) for c in to_run
         ])
         fresh = {
@@ -155,16 +154,19 @@ async def _ensure_analyses(chunks: list[dict[str, Any]], stage_cache: dict[str, 
     return cache
 
 
-async def _ensure_plans(document_id: str, levels: list[str], stage_cache: dict[str, Any]) -> dict[str, Any]:
+async def _ensure_plans(
+    document_id: str, levels: list[str], stage_cache: dict[str, Any], session_id: str | None = None,
+) -> dict[str, Any]:
     """Stage 2 (+ few-shot examples) for Bloom levels not planned yet, from a topic/concept summary only."""
     cache = _copy_cache(stage_cache)
     new_levels = [lvl for lvl in dict.fromkeys(levels) if lvl not in cache["plans"]]
     if not new_levels:
         return cache
 
+    progress.phase(session_id, "planning", "Merencanakan level kognitif soal…")
     planning_model = get_chat_model(is_judge=False, temperature=0.2)
     summary = planning_summary(list(_analyses(cache).values()))
-    stage2 = await _gather_limited([
+    stage2 = await _gather([
         run_stage2_cognitive_planning(planning_model, summary, lvl, 1) for lvl in new_levels
     ])
     for lvl, (plan, trace) in zip(new_levels, stage2, strict=True):
@@ -173,28 +175,78 @@ async def _ensure_plans(document_id: str, levels: list[str], stage_cache: dict[s
     return cache
 
 
-async def _generate_candidates(
+def _validation_input(
+    q: dict[str, Any], session_id: str | None, session_bloom_level: str | None, candidate_id: str,
+) -> QuestionState:
+    """Isolated QuestionState for one candidate: its own context, traces, and an empty log."""
+    return {
+        "question": {k: v for k, v in q.items() if k not in ("stage_traces", "context")},
+        "context": q.get("context", ""),
+        "session_bloom_level": session_bloom_level,
+        "session_id": session_id or "",
+        "candidate_id": candidate_id,
+        "attempt": 1,
+        "max_attempts": get_settings().MAX_REFINEMENT_ATTEMPTS,
+        "failed_stage": "none",
+        "judge_evaluation": None,
+        "validation_logs": [],
+        "stage_traces": list(q.get("stage_traces", [])),
+    }
+
+
+async def validate_candidate(state: QuestionState) -> dict[str, Any]:
+    """Run the per-question validation subgraph; the result carries its own logs and traces."""
+    from app.graph.workflow import get_validation_graph
+
+    result = await get_validation_graph().ainvoke(state)
+    q = dict(result["question"])
+    q["validation_logs"] = result.get("validation_logs", [])
+    q["stage_traces"] = result.get("stage_traces", [])
+    return q
+
+
+async def _generate_and_validate(
+    state: AQGState,
     chunks: list[dict[str, Any]],
     items: list[dict[str, Any]],
     stage_cache: dict[str, Any],
+    round_tag: str,
+    existing: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Stage 3 once per chunk (blueprints for all its questions), then Stage 4 per question.
+    """Pipeline per question: Stage 3 once per chunk, then Stage 4 -> dedup -> validation for each question.
 
     Every call sees only the question's own chunk; that text is stored as the candidate's context so the
-    judge and refinement evaluate against exactly the same material.
+    judge and refinement evaluate against exactly the same material. A question is validated as soon as it
+    is written instead of waiting for its siblings. Once `num_questions` questions are final (counting
+    `existing`), candidates still in flight are cancelled. Returns this round's validated questions.
     """
+    session_id = state.get("session_id")
+    target = state.get("num_questions", 5)
     chunk_by_id = {c["id"]: c for c in chunks}
     generation_model = get_chat_model(is_judge=False, temperature=0.4)
     analyses = _analyses(stage_cache)
     plans = {lvl: CognitivePlan.model_validate(v["plan"]) for lvl, v in stage_cache["plans"].items()}
-    semaphore = asyncio.Semaphore(get_settings().GENERATION_CONCURRENCY)
 
     groups: dict[str, list[int]] = {}
     for idx, item in enumerate(items):
         groups.setdefault(item["chunk_id"], []).append(idx)
-    results: list[dict[str, Any]] = [{} for _ in items]
 
-    async def _question(item: dict[str, Any], blueprint: QuestionBlueprint, bp_fallback: bool, t3: dict[str, Any]) -> dict[str, Any]:
+    ids = [f"{round_tag}-{i + 1}" for i in range(len(items))]
+    for cid in ids:
+        progress.candidate(session_id, cid, "blueprint")
+
+    validated: list[dict[str, Any]] = []
+    seen = list(existing)  # questions a new candidate must not duplicate
+    open_ids = set(ids)
+    finals_before = _count_final(existing)
+    target_reached = asyncio.Event()
+
+    def _close(cid: str, status: str, q: dict[str, Any] | None = None) -> None:
+        open_ids.discard(cid)
+        progress.candidate(session_id, cid, status, q)
+
+    async def _question(idx: int, blueprint: QuestionBlueprint, bp_fallback: bool, t3: dict[str, Any]) -> None:
+        item, cid = items[idx], ids[idx]
         chk = chunk_by_id[item["chunk_id"]]
         level = item["bloom_level"]
         c_analysis = analyses[item["chunk_id"]]
@@ -202,15 +254,15 @@ async def _generate_candidates(
         # Each question's trace holds only the stages that produced it
         step_traces = [stage_cache["analyses"][chk["id"]]["trace"], stage_cache["plans"][level]["trace"], t3]
 
+        progress.candidate(session_id, cid, "writing")
         q_type = blueprint.question_type or plans[level].recommended_question_format or "esai"
-        async with semaphore:
-            q_pkg, t4 = await run_stage4_question_generation(
-                generation_model, context, blueprint, level, q_type,
-                stage_cache["few_shots"].get(level, NO_FEW_SHOT), 1,
-            )
+        q_pkg, t4 = await run_stage4_question_generation(
+            generation_model, context, blueprint, level, q_type,
+            stage_cache["few_shots"].get(level, NO_FEW_SHOT), 1,
+        )
         step_traces.append(t4.model_dump())
 
-        return {
+        q = {
             "question": q_pkg.question,
             "question_type": q_pkg.question_type or q_type,
             "answer": q_pkg.expected_answer,
@@ -232,22 +284,42 @@ async def _generate_candidates(
             "has_fallback": bp_fallback or any(t.get("status") == "fallback" or t.get("has_fallback") for t in step_traces),
         }
 
+        if not deduplicate_questions([q], threshold=_DEDUP_THRESHOLD, existing=seen):
+            logger.info("[Pipeline] %s dropped as a near-duplicate: '%s'", cid, q["question"][:60])
+            _close(cid, "dropped")
+            return
+        seen.append(q)
+
+        result = await validate_candidate(_validation_input(q, session_id, state.get("bloom_level"), cid))
+        validated.append(result)
+        _close(cid, result.get("status", "needs_review"), result)
+        if finals_before + _count_final(validated) >= target:
+            target_reached.set()
+
     async def _chunk_group(chunk_id: str, indices: list[int]) -> None:
         group = [items[i] for i in indices]
         logger.info("[Multi-Stage Gen] %d question(s) from chunk '%s'.", len(group), source_reference(chunk_by_id[chunk_id])[:60])
-        async with semaphore:
-            blueprints, fallbacks, t3 = await run_stage3_blueprint_batch(
-                generation_model, focus_context(chunk_by_id[chunk_id]), group, plans, 1,
-            )
+        blueprints, fallbacks, t3 = await run_stage3_blueprint_batch(
+            generation_model, focus_context(chunk_by_id[chunk_id]), group, plans, 1,
+        )
         trace = t3.model_dump()
-        questions = await asyncio.gather(*[
-            _question(item, bp, fb, trace) for item, bp, fb in zip(group, blueprints, fallbacks, strict=True)
+        await asyncio.gather(*[
+            _question(i, bp, fb, trace) for i, bp, fb in zip(indices, blueprints, fallbacks, strict=True)
         ])
-        for i, q in zip(indices, questions, strict=True):
-            results[i] = q
 
-    await asyncio.gather(*[_chunk_group(cid, idxs) for cid, idxs in groups.items()])
-    return results
+    all_done = asyncio.gather(*[_chunk_group(cid, idxs) for cid, idxs in groups.items()])
+    stop = asyncio.ensure_future(target_reached.wait())
+    await asyncio.wait([all_done, stop], return_when=asyncio.FIRST_COMPLETED)
+    stop.cancel()
+    if all_done.done():
+        all_done.result()  # surface an unexpected error from a chunk group
+    else:
+        logger.info("[Pipeline] %d final questions reached; cancelling %d candidate(s).", target, len(open_ids))
+        all_done.cancel()
+        await asyncio.gather(all_done, return_exceptions=True)
+    for cid in list(open_ids):
+        _close(cid, "dropped")
+    return validated
 
 
 # ── Session-level Nodes (AQGState) ──
@@ -256,6 +328,7 @@ async def _generate_candidates(
 def retrieve_context(state: AQGState) -> dict[str, Any]:
     """Node 1: rank chunks (hybrid RAG) and keep the fewest whose estimated capacity covers the candidates."""
     logger.info("[LangGraph Node 1] retrieve_context started for session_id='%s'", state["session_id"])
+    progress.phase(state.get("session_id"), "retrieval", "Mencari materi yang relevan…")
     document_id = state["document_id"]
 
     chunks = load_document_chunks(document_id)
@@ -284,22 +357,23 @@ def retrieve_context(state: AQGState) -> dict[str, Any]:
 
 @_timed("generate_questions")
 async def generate_questions(state: AQGState) -> dict[str, Any]:
-    """Node 2: Multi-Stage generation over capacity-checked chunks.
+    """Node 2: Multi-Stage generation over capacity-checked chunks, each question validated as soon as it is written.
 
     Stage 1 measures each chunk's real capacity (valid testable points). If the selected chunks fall
     short, the next reserve chunks are analysed (at most `_EXPANSION_ROUNDS` times) before any point is
     reused. Each chunk then gets up to `max_questions_per_chunk` questions.
     """
     logger.info("[LangGraph Node 2] Multi-Stage generate_questions started")
+    session_id = state.get("session_id")
     retrieved = list(state.get("retrieved_chunks", []))
     if not retrieved:
-        return {"raw_questions": [], "error": state.get("error") or "Tidak ada konteks materi untuk pembuatan soal."}
+        return {"validated_questions": [], "error": state.get("error") or "Tidak ada konteks materi untuk pembuatan soal."}
 
     max_per_chunk = get_settings().MAX_QUESTIONS_PER_CHUNK
     reserve = list(state.get("reserve_chunks", []))
     levels = assign_bloom_levels(candidate_count(state.get("num_questions", 5)), state.get("bloom_level"))
 
-    stage_cache = await _ensure_analyses(retrieved, {})
+    stage_cache = await _ensure_analyses(retrieved, {}, session_id)
     point_lists = chunk_point_lists(retrieved, _analyses(stage_cache))
     for _ in range(_EXPANSION_ROUNDS):
         short = len(levels) - real_capacity(point_lists, max_per_chunk)
@@ -310,24 +384,24 @@ async def generate_questions(state: AQGState) -> dict[str, Any]:
             break
         logger.info("[Node 2] Capacity short by %d; analysing %d reserve chunk(s).", short, len(new_chunks))
         retrieved += new_chunks
-        stage_cache = await _ensure_analyses(new_chunks, stage_cache)
+        stage_cache = await _ensure_analyses(new_chunks, stage_cache, session_id)
         point_lists = chunk_point_lists(retrieved, _analyses(stage_cache))
 
     items, spare_items = allocate_items(point_lists, levels, max_per_chunk)
     if not items:
-        return {"raw_questions": [], "error": "Materi yang ditemukan tidak memuat poin yang dapat dijadikan soal."}
-    stage_cache = await _ensure_plans(state["document_id"], [it["bloom_level"] for it in items], stage_cache)
+        return {"validated_questions": [], "error": "Materi yang ditemukan tidak memuat poin yang dapat dijadikan soal."}
+    stage_cache = await _ensure_plans(state["document_id"], [it["bloom_level"] for it in items], stage_cache, session_id)
     logger.info(
         "[Node 2] %d candidates from %d chunks (real capacity %d).",
         len(items), len({it["chunk_id"] for it in items}), real_capacity(point_lists, max_per_chunk),
     )
 
-    candidates = await _generate_candidates(retrieved, items, stage_cache)
-    deduped = deduplicate_questions(candidates, threshold=_DEDUP_THRESHOLD)
-    logger.info("[Node 2] Generated %d candidates (%d after dedup).", len(candidates), len(deduped))
+    progress.phase(session_id, "generation", f"Membuat dan memvalidasi {len(items)} kandidat soal…")
+    validated = await _generate_and_validate(state, retrieved, items, stage_cache, "r1", existing=[])
+    logger.info("[Node 2] %d of %d candidates validated (%d final).", len(validated), len(items), _count_final(validated))
 
     return {
-        "raw_questions": deduped,
+        "validated_questions": validated,
         "retrieved_chunks": retrieved,
         "reserve_chunks": reserve,
         "source_chunk_ids": [c["id"] for c in retrieved],
@@ -336,49 +410,8 @@ async def generate_questions(state: AQGState) -> dict[str, Any]:
     }
 
 
-def fan_out_validation(state: AQGState):
-    """Send every candidate of the current round to its own isolated validation run."""
-    from langgraph.graph import END
-    from langgraph.types import Send
-
-    raw_qs = state.get("raw_questions", [])
-    if not raw_qs:
-        if state.get("validated_questions"):
-            return "persist_questions"
-        logger.warning("[Edge] No candidate questions generated -> END")
-        return END
-
-    max_attempts = get_settings().MAX_REFINEMENT_ATTEMPTS
-    logger.info("[Edge] Fan-out %d candidates -> validate_question", len(raw_qs))
-    return [
-        Send("validate_question", {
-            "question": {k: v for k, v in q.items() if k not in ("stage_traces", "context")},
-            "context": q.get("context", ""),
-            "session_bloom_level": state.get("bloom_level"),
-            "attempt": 1,
-            "max_attempts": max_attempts,
-            "failed_stage": "none",
-            "judge_evaluation": None,
-            "validation_logs": [],
-            "stage_traces": list(q.get("stage_traces", [])),
-        })
-        for q in raw_qs
-    ]
-
-
-async def validate_question(state: QuestionState) -> dict[str, Any]:
-    """Run the per-question validation subgraph and hand the result back to the session state."""
-    from app.graph.workflow import get_validation_graph
-
-    result = await get_validation_graph().ainvoke(state)
-    q = dict(result["question"])
-    q["validation_logs"] = result.get("validation_logs", [])
-    q["stage_traces"] = result.get("stage_traces", [])
-    return {"validated_questions": [q]}
-
-
 def review_results(state: AQGState) -> dict[str, Any]:
-    """Fan-in point: summarize the validation round."""
+    """Summarize the validated questions so far (after generation or top-up)."""
     validated = state.get("validated_questions", [])
     logger.info("[Node Review] %d/%d candidates passed (target %d).",
                 _count_final(validated), len(validated), state.get("num_questions", 5))
@@ -387,11 +420,12 @@ def review_results(state: AQGState) -> dict[str, Any]:
 
 @_timed("top_up_questions")
 async def top_up_questions(state: AQGState) -> dict[str, Any]:
-    """Generate replacement candidates for questions that did not pass validation (one round only).
+    """Generate and validate replacement candidates for questions that did not pass validation (one round only).
 
     Knowledge points come from, in order: valid points not used yet, reserve chunks (analysed now and
     checked for capacity), and finally the points whose question failed.
     """
+    session_id = state.get("session_id")
     validated = state.get("validated_questions", [])
     count = max(0, state.get("num_questions", 5) - _count_final(validated)) + 1
 
@@ -408,7 +442,7 @@ async def top_up_questions(state: AQGState) -> dict[str, Any]:
         new_chunks, reserve = select_by_capacity(reserve, count - len(spare), len(reserve))
         if new_chunks:
             retrieved += new_chunks
-            stage_cache = await _ensure_analyses(new_chunks, stage_cache)
+            stage_cache = await _ensure_analyses(new_chunks, stage_cache, session_id)
             used_points = [q.get("knowledge_point", "") for q in validated] + [s["point"] for s in spare]
             spare += interleave(chunk_point_lists(new_chunks, _analyses(stage_cache), exclude_points=used_points))
     if len(spare) < count:
@@ -417,15 +451,16 @@ async def top_up_questions(state: AQGState) -> dict[str, Any]:
             for q in failed if q.get("chunk_id")
         ]
     if not spare:
-        return {"raw_questions": [], "top_up_done": True}
+        return {"top_up_done": True}
 
     items, rest = allocate_items([spare], levels, max_per_chunk=len(levels))
-    stage_cache = await _ensure_plans(state["document_id"], levels, stage_cache)
+    stage_cache = await _ensure_plans(state["document_id"], levels, stage_cache, session_id)
     logger.info("[Node TopUp] Generating %d replacement candidates.", len(items))
 
-    candidates = await _generate_candidates(retrieved, items, stage_cache)
+    progress.phase(session_id, "top_up", f"Membuat {len(items)} soal pengganti…")
+    replacements = await _generate_and_validate(state, retrieved, items, stage_cache, "r2", existing=validated)
     return {
-        "raw_questions": deduplicate_questions(candidates, threshold=_DEDUP_THRESHOLD, existing=validated),
+        "validated_questions": replacements,
         "retrieved_chunks": retrieved,
         "reserve_chunks": reserve,
         "source_chunk_ids": [c["id"] for c in retrieved],
@@ -438,6 +473,7 @@ async def top_up_questions(state: AQGState) -> dict[str, Any]:
 @_timed("persist_questions")
 def persist_questions(state: AQGState) -> dict[str, Any]:
     """Node 6: choose the best `num_questions` (passed first, then needs_review) and save them with their own logs/traces."""
+    progress.phase(state.get("session_id"), "saving", "Menyimpan soal…")
     num_questions = state.get("num_questions", 5)
     validated = state.get("validated_questions", [])
 
@@ -485,6 +521,7 @@ def grounding_validation(state: QuestionState) -> dict[str, Any]:
         return fail("grounding", "fail (empty_question)", "Soal kosong.")
 
     logger.info("[Validation] grounding (attempt %d) for: '%s'", attempt, q_text[:60])
+    progress.candidate(state.get("session_id"), state.get("candidate_id"), "validating", q, attempt)
 
     # Pre-check: reflective, classroom-referencing, or multi-question items are rejected before spending a judge call
     if is_reflective_question(q_text):
@@ -583,6 +620,7 @@ async def self_refinement(state: QuestionState) -> dict[str, Any]:
     context_str = state.get("context", "")
 
     logger.info("[Validation] self_refinement attempt %d/%d (failed_stage='%s')", attempt, state["max_attempts"], failed_stage)
+    progress.candidate(state.get("session_id"), state.get("candidate_id"), "refining", q, attempt)
 
     chat_model = get_chat_model(is_judge=False, temperature=0.2)
     curr_traces = list(state.get("stage_traces", []))

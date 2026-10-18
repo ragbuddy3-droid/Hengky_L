@@ -33,6 +33,16 @@ def route_after_judge(state: QuestionState) -> str:
 
 # ── Session graph ──
 
+def route_after_generation(state: AQGState) -> str:
+    """Review the validated candidates, or stop when generation produced none (the error explains why)."""
+    from langgraph.graph import END
+
+    if state.get("validated_questions"):
+        return "review_results"
+    logger.warning("[Edge] No candidate questions generated -> END")
+    return END
+
+
 def route_after_review(state: AQGState) -> str:
     """Top up once if fewer questions passed than requested, otherwise persist."""
     validated = state.get("validated_questions", [])

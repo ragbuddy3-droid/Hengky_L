@@ -2,15 +2,29 @@
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 
-class TestableContentItem(BaseModel):
+class _LenientModel(BaseModel):
+    """Stage output schema that accepts a list where a text field is expected (some models answer with bullets)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _join_text_lists(cls, value: Any, info: ValidationInfo) -> Any:
+        field = cls.model_fields.get(info.field_name or "")
+        if isinstance(value, list) and field is not None and field.annotation in (str, str | None):
+            return "; ".join(str(v) for v in value)
+        return value
+
+
+class TestableContentItem(_LenientModel):
     point: str = Field(description="Substansi materi yang dapat diuji")
     source_quote: str = Field(description="Kutipan kalimat persis dari konteks buku")
 
 
-class ContentAnalysis(BaseModel):
+class ContentAnalysis(_LenientModel):
     """Output of Stage 1 — Context Understanding."""
     topic: str = Field(default="", description="Topik utama materi")
     subtopics: list[str] = Field(default_factory=list, description="Daftar subtopik")
@@ -23,7 +37,7 @@ class ContentAnalysis(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-class CognitivePlan(BaseModel):
+class CognitivePlan(_LenientModel):
     """Output of Stage 2 — Cognitive Bloom Planning."""
     cognitive_level: str = Field(default="C2-Memahami", description="Target level kognitif (C1-C4)")
     cognitive_operation: str = Field(default="", description="Operasi kognitif yang ditargetkan")
@@ -37,7 +51,7 @@ class CognitivePlan(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-class QuestionBlueprint(BaseModel):
+class QuestionBlueprint(_LenientModel):
     """Output of Stage 3 — Question Blueprint."""
     knowledge_point: str = Field(default="", description="Pokok bahasan spesifik yang diuji")
     question_type: str = Field(default="esai", description="Format soal (isian_singkat / esai)")
@@ -73,7 +87,7 @@ class RubricCriterion(BaseModel):
     criteria: str = Field(description="Kriteria pemenuhan untuk mendapatkan skor ini")
 
 
-class QuestionPackage(BaseModel):
+class QuestionPackage(_LenientModel):
     """Output of Stage 4 — Question Generation Package."""
     question: str = Field(description="Teks pertanyaan untuk siswa SD")
     question_type: str = Field(default="esai", description="Tipe soal (isian_singkat / esai)")
@@ -88,14 +102,14 @@ class QuestionPackage(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-class JudgeAspectResult(BaseModel):
+class JudgeAspectResult(_LenientModel):
     status: str = Field(default="pass", description="pass atau fail")
     score: float | None = Field(default=None, description="Skor numerik jika relevan")
     detected_level: str | None = Field(default=None, description="Level kognitif yang terdeteksi")
     feedback: str = Field(default="", description="Catatan atau masukan evaluasi")
 
 
-class JudgeEvaluationResult(BaseModel):
+class JudgeEvaluationResult(_LenientModel):
     """Output of LLM-as-Judge Layer 2."""
     grounding: JudgeAspectResult = Field(default_factory=lambda: JudgeAspectResult(status="pass"))
     bloom_adherence: JudgeAspectResult = Field(default_factory=lambda: JudgeAspectResult(status="pass"))

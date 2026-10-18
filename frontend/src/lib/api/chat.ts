@@ -1,5 +1,5 @@
 import type { ChatMessage, ChatSession, ChatSessionListItem } from '@/types/chat';
-import { request } from './client';
+import { API_BASE_URL, request } from './client';
 
 export const chatApi = {
   listSessions: (documentId?: string) =>
@@ -17,4 +17,7 @@ export const chatApi = {
 
   sendMessage: (sessionId: string, content: string) =>
     request<ChatMessage>(`/chat/sessions/${sessionId}/messages`, { method: 'POST', json: { content } }),
+
+  /** Server-Sent Events progres generasi soal (untuk `EventSource`). */
+  generationStreamUrl: (sessionId: string) => `${API_BASE_URL}/chat/sessions/${sessionId}/generation/stream`,
 };

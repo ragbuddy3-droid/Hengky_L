@@ -5,12 +5,12 @@ import logging
 from langgraph.graph import END, StateGraph
 
 from app.graph.edges import (
+    route_after_generation,
     route_after_grounding,
     route_after_judge,
     route_after_review,
 )
 from app.graph.nodes import (
-    fan_out_validation,
     finalize_question,
     generate_questions,
     grounding_validation,
@@ -20,7 +20,6 @@ from app.graph.nodes import (
     review_results,
     self_refinement,
     top_up_questions,
-    validate_question,
 )
 from app.graph.state import AQGState, QuestionState
 
@@ -57,27 +56,22 @@ def build_validation_graph():
 
 
 def build_aqg_graph():
-    """Session graph: retrieve -> generate -> parallel validation per candidate -> (top-up once) -> persist."""
+    """Session graph: retrieve -> generate (each question validated as soon as it is written) -> (top-up once) -> persist."""
     logger.info("Building LangGraph AQG StateGraph workflow...")
 
     graph = StateGraph(AQGState)
 
     graph.add_node("retrieve_context", retrieve_context)
     graph.add_node("generate_questions", generate_questions)
-    graph.add_node("validate_question", validate_question)
     graph.add_node("review_results", review_results)
     graph.add_node("top_up_questions", top_up_questions)
     graph.add_node("persist_questions", persist_questions)
 
     graph.set_entry_point("retrieve_context")
     graph.add_edge("retrieve_context", "generate_questions")
-    graph.add_edge("validate_question", "review_results")
+    graph.add_conditional_edges("generate_questions", route_after_generation, ["review_results", END])
+    graph.add_edge("top_up_questions", "review_results")
     graph.add_edge("persist_questions", END)
-
-    # Fan-out: one isolated validation run per candidate (Send), for both the first and the top-up round
-    fan_out_targets = ["validate_question", "persist_questions", END]
-    graph.add_conditional_edges("generate_questions", fan_out_validation, fan_out_targets)
-    graph.add_conditional_edges("top_up_questions", fan_out_validation, fan_out_targets)
 
     graph.add_conditional_edges(
         "review_results",

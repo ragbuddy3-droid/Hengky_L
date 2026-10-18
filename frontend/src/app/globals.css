@@ -31,6 +31,19 @@ body {
   background-color: var(--mantine-color-default-hover);
 }
 
+/* Kartu soal yang muncul selama generasi (mode stream). */
+.stream-in {
+  animation: stream-in 240ms ease-out;
+  transition: opacity 200ms ease;
+}
+
+@keyframes stream-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
 /* Markdown di bubble chat: heading lebih kecil agar tidak mendominasi. */
 .markdown-compact :is(h1, h2, h3, h4) {
   font-size: var(--mantine-font-size-md);
