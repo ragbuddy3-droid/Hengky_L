@@ -161,7 +161,21 @@ def test_generation_intent_detection():
     p3 = parse_generation_params(req3)
     assert p3.num_questions == 2
 
+    # SD only covers C1-C4: C3 maps to the canonical label, C5/C6 fall back to mixed levels
+    assert parse_generation_params("Buatkan 2 soal C3").bloom_level == "C3-Mengaplikasikan"
+    assert parse_generation_params("Buatkan 2 soal C5").bloom_level is None
+    assert parse_generation_params("Buatkan 2 soal C6 bab 1").bloom_level is None
+
     # Conversational messages
     assert is_generation_intent("Halo apa kabar?") is False
     assert is_generation_intent("Terima kasih banyak atas bantuannya") is False
 
+
+def test_bloom_levels_limited_to_c1_c4():
+    """Planner normalizes any requested level into the SD range C1-C4."""
+    from app.services.generation.planner import MIXED_BLOOM_LEVELS, normalize_bloom_level
+
+    assert [lvl[:2] for lvl in MIXED_BLOOM_LEVELS] == ["C1", "C2", "C3", "C4"]
+    assert normalize_bloom_level("C3-Menerapkan") == "C3-Mengaplikasikan"
+    assert normalize_bloom_level("C5-Mengevaluasi") == "C2-Memahami"
+    assert normalize_bloom_level(None) is None

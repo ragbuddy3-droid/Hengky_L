@@ -18,7 +18,7 @@ function GuestHistoryBanner() {
           Riwayat hanya tersimpan di browser ini selama 24 jam. Masuk untuk menyimpan.
         </Text>
       </Group>
-      <Button component={Link} href="/masuk" size="compact-xs" variant="subtle" color="accent.8" mt={4} ml={16}>
+      <Button component={Link} href="/login" size="compact-xs" variant="subtle" color="accent.8" mt={4} ml={16}>
         Masuk
       </Button>
     </Paper>

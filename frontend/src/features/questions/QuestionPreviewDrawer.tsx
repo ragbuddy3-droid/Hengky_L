@@ -69,7 +69,7 @@ export function QuestionPreviewDrawer({ question, onClose }: { question: Questio
             </Section>
           )}
 
-          <Button component={Link} href={`/soal/${question.id}`} variant="light" rightSection={<IconArrowRight size={16} aria-hidden />}>
+          <Button component={Link} href={`/questions/${question.id}`} variant="light" rightSection={<IconArrowRight size={16} aria-hidden />}>
             Buka detail &amp; audit
           </Button>
         </Stack>

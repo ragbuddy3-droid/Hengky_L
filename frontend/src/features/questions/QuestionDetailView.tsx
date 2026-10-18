@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Alert, Anchor, Badge, Breadcrumbs, Button, Group, List, Paper, Skeleton, Stack, Tabs, Text, Title } from '@mantine/core';
+import { Alert, Badge, Button, Group, List, Paper, Skeleton, Stack, Tabs, Text, Title } from '@mantine/core';
 import {
   IconAlertTriangle,
   IconBook2,
@@ -16,6 +16,7 @@ import { BloomBadge, QuestionStatusBadge, QuestionTypeBadge } from '@/components
 import { CopyTextButton } from '@/components/common/CopyTextButton';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageContainer } from '@/components/common/PageContainer';
+import { PageBreadcrumbs, PageHeader } from '@/components/common/PageHeader';
 import { QueryError } from '@/components/common/QueryError';
 import { useQuestion } from '@/hooks/useQuestions';
 import { ApiError } from '@/lib/api/client';
@@ -40,21 +41,12 @@ function TabLabel({ children, count }: { children: React.ReactNode; count?: numb
 export function QuestionDetailView({ id }: { id: string }) {
   const { data: question, isLoading, error, refetch } = useQuestion(id);
 
-  const breadcrumbs = (
-    <Breadcrumbs mb="md" fz="sm" separator={<Text span c="dimmed" aria-hidden>/</Text>}>
-      <Anchor component={Link} href="/soal">
-        Bank Soal
-      </Anchor>
-      <Text size="sm" c="dimmed">
-        Detail soal
-      </Text>
-    </Breadcrumbs>
-  );
+  const crumbs = [{ label: 'Bank Soal', href: '/questions' }, { label: 'Detail soal' }];
 
   if (isLoading) {
     return (
       <PageContainer>
-        {breadcrumbs}
+        <PageBreadcrumbs items={crumbs} />
         <Skeleton h={22} w={220} mb="sm" />
         <Skeleton h={64} mb="lg" />
         <Skeleton h={320} radius="md" />
@@ -65,14 +57,14 @@ export function QuestionDetailView({ id }: { id: string }) {
   if (error || !question) {
     return (
       <PageContainer>
-        {breadcrumbs}
+        <PageBreadcrumbs items={crumbs} />
         {error instanceof ApiError && error.status === 404 ? (
           <EmptyState
             icon={<IconQuestionMark size={24} aria-hidden />}
             title="Soal tidak ditemukan"
             description="Soal ini mungkin sudah dihapus bersama sesinya."
             action={
-              <Button component={Link} href="/soal" variant="default">
+              <Button component={Link} href="/questions" variant="default">
                 Kembali ke Bank Soal
               </Button>
             }
@@ -88,11 +80,11 @@ export function QuestionDetailView({ id }: { id: string }) {
 
   return (
     <PageContainer>
-      {breadcrumbs}
-
-      <Stack gap="md" mb="lg">
-        <Group justify="space-between" gap="sm">
-          <Group gap={6}>
+      <PageHeader
+        breadcrumbs={crumbs}
+        title="Detail Soal"
+        meta={
+          <>
             <QuestionTypeBadge type={question.question_type} />
             <BloomBadge level={question.bloom_level} />
             <QuestionStatusBadge status={question.status} />
@@ -101,21 +93,24 @@ export function QuestionDetailView({ id }: { id: string }) {
                 {question.refinement_count}× perbaikan
               </Badge>
             )}
-          </Group>
+          </>
+        }
+        actions={
           <Button
             component={Link}
             href={`/chat/${question.session_id}`}
             variant="default"
-            size="xs"
-            leftSection={<IconMessageCircle size={14} aria-hidden />}
+            leftSection={<IconMessageCircle size={16} aria-hidden />}
           >
             Buka percakapan
           </Button>
-        </Group>
+        }
+      />
 
+      <Stack gap="md" mb="lg">
         <Paper p="lg">
           <Group align="flex-start" wrap="nowrap" gap="sm">
-            <Title order={1} fz={{ base: 18, sm: 22 }} lh={1.45} fw={600} style={{ flex: 1 }}>
+            <Title order={2} fz={{ base: 18, sm: 20 }} lh={1.45} fw={600} style={{ flex: 1 }}>
               {question.question_text}
             </Title>
             <CopyTextButton value={question.question_text} label="Salin soal" />

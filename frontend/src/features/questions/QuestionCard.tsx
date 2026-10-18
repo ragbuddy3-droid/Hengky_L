@@ -10,7 +10,7 @@ export function QuestionCard({ question }: { question: Question }) {
   const warnings = question.quality_warnings?.length ?? 0;
 
   return (
-    <Anchor component={Link} href={`/soal/${question.id}`} underline="never" c="inherit" display="block">
+    <Anchor component={Link} href={`/questions/${question.id}`} underline="never" c="inherit" display="block">
       <Paper p="md" className="hover-surface">
         <Group justify="space-between" gap="xs" mb="xs">
           <Group gap={6}>

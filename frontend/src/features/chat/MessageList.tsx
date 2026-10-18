@@ -93,7 +93,7 @@ function Welcome({ documentName, onPick }: { documentName?: string | null; onPic
         Siap membuat soal{documentName ? ` dari ${documentName}` : ''}
       </Text>
       <Text size="sm" c="dimmed">
-        Sebutkan jumlah soal, level Bloom (C1–C6), dan bab bila perlu. Atau pilih salah satu contoh:
+        Sebutkan jumlah soal, level Bloom (C1–C4), dan bab bila perlu. Atau pilih salah satu contoh:
       </Text>
       <Group justify="center" gap={6} mt="xs">
         {EXAMPLE_PROMPTS.map((p) => (

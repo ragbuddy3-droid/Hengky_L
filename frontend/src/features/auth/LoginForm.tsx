@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { PAGE_TITLE_FZ } from '@/components/common/PageHeader';
 import { Alert, Anchor, Button, Checkbox, Divider, PasswordInput, Stack, Text, TextInput, Title } from '@mantine/core';
 import { isEmail, isNotEmpty, useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
@@ -37,12 +38,12 @@ export function LoginForm({ next }: { next?: string }) {
       .catch((err: Error) => setServerError(err.message));
   });
 
-  const registerHref = next ? `/daftar?next=${encodeURIComponent(target)}` : '/daftar';
+  const registerHref = next ? `/register?next=${encodeURIComponent(target)}` : '/register';
 
   return (
     <Stack gap="lg">
       <div>
-        <Title order={1} fz={{ base: 26, sm: 30 }}>
+        <Title order={1} fz={PAGE_TITLE_FZ}>
           Masuk ke Soalnya
         </Title>
         <Text c="dimmed" mt={6}>

@@ -3,11 +3,12 @@
 import { useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Alert, Anchor, Breadcrumbs, Button, Group, Paper, SimpleGrid, Skeleton, Stack, Text, Title } from '@mantine/core';
+import { Alert, Button, Paper, SimpleGrid, Skeleton, Stack, Text, Title } from '@mantine/core';
 import { IconAlertCircle, IconFileOff, IconLoader, IconTrash } from '@tabler/icons-react';
 import { DocumentStatusBadge } from '@/components/common/Badges';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageContainer } from '@/components/common/PageContainer';
+import { PageBreadcrumbs, PageHeader } from '@/components/common/PageHeader';
 import { QueryError } from '@/components/common/QueryError';
 import { useDocument, useDocumentChunks } from '@/hooks/useDocuments';
 import { ApiError } from '@/lib/api/client';
@@ -52,23 +53,14 @@ export function DocumentDetailView({ id }: { id: string }) {
   const { data: doc, isLoading, error, refetch } = useDocument(id);
   const ready = doc?.status === 'ready';
   const chunksQuery = useDocumentChunks(id, ready);
-  const handleDelete = useDeleteDocumentAction(() => router.push('/dokumen'));
+  const handleDelete = useDeleteDocumentAction(() => router.push('/documents'));
 
-  const breadcrumbs = (
-    <Breadcrumbs mb="md" fz="sm" separator={<Text span c="dimmed" aria-hidden>/</Text>}>
-      <Anchor component={Link} href="/dokumen">
-        Dokumen
-      </Anchor>
-      <Text size="sm" c="dimmed" truncate maw={280}>
-        {doc?.filename ?? '…'}
-      </Text>
-    </Breadcrumbs>
-  );
+  const crumbs = [{ label: 'Dokumen', href: '/documents' }, { label: doc?.filename ?? '…' }];
 
   if (isLoading) {
     return (
       <PageContainer>
-        {breadcrumbs}
+        <PageBreadcrumbs items={crumbs} />
         <Skeleton h={36} w="50%" mb="xs" />
         <Skeleton h={18} w="30%" mb="xl" />
         <Skeleton h={88} radius="md" />
@@ -79,14 +71,14 @@ export function DocumentDetailView({ id }: { id: string }) {
   if (error) {
     return (
       <PageContainer>
-        {breadcrumbs}
+        <PageBreadcrumbs items={crumbs} />
         {error instanceof ApiError && error.status === 404 ? (
           <EmptyState
             icon={<IconFileOff size={24} aria-hidden />}
             title="Dokumen tidak ditemukan"
             description="Buku ini mungkin sudah dihapus."
             action={
-              <Button component={Link} href="/dokumen" variant="default">
+              <Button component={Link} href="/documents" variant="default">
                 Kembali ke daftar dokumen
               </Button>
             }
@@ -102,32 +94,32 @@ export function DocumentDetailView({ id }: { id: string }) {
 
   return (
     <PageContainer>
-      {breadcrumbs}
-      <Group justify="space-between" align="flex-start" mb="lg" gap="md">
-        <Stack gap={4} miw={0} style={{ flex: '1 1 320px' }}>
-          <Title order={2} fz={{ base: 22, sm: 26 }} style={{ overflowWrap: 'anywhere' }}>
-            {doc.filename}
-          </Title>
-          <Group gap="xs">
+      <PageHeader
+        breadcrumbs={crumbs}
+        title={doc.filename}
+        meta={
+          <>
             <DocumentStatusBadge status={doc.status} />
             <Text size="sm" c="dimmed">
               {doc.subject}
               {doc.created_at && ` · diunggah ${formatDate(doc.created_at)}`}
             </Text>
-          </Group>
-        </Stack>
-        <Group gap="sm">
-          <Button
-            variant="default"
-            color="red"
-            leftSection={<IconTrash size={16} aria-hidden />}
-            onClick={() => handleDelete(doc)}
-          >
-            Hapus
-          </Button>
-          <GenerateQuestionsButton documentId={doc.id} ready={ready} />
-        </Group>
-      </Group>
+          </>
+        }
+        actions={
+          <>
+            <Button
+              variant="default"
+              color="red"
+              leftSection={<IconTrash size={16} aria-hidden />}
+              onClick={() => handleDelete(doc)}
+            >
+              Hapus
+            </Button>
+            <GenerateQuestionsButton documentId={doc.id} ready={ready} />
+          </>
+        }
+      />
 
       {doc.status === 'failed' && (
         <Alert color="red" title="Pemrosesan gagal" icon={<IconAlertCircle size={18} aria-hidden />} mb="lg">
@@ -149,7 +141,7 @@ export function DocumentDetailView({ id }: { id: string }) {
             <>
               {chunksQuery.data ? <ChunkStats chunks={chunksQuery.data} /> : <Skeleton h={88} radius="md" />}
               <div>
-                <Title order={3} fz="lg" mb="sm">
+                <Title order={2} fz="lg" mb="sm">
                   Potongan Teks
                 </Title>
                 <ChunkList chunks={chunksQuery.data} isLoading={chunksQuery.isLoading} />

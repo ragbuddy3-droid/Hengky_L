@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { PAGE_TITLE_FZ } from '@/components/common/PageHeader';
 import { Alert, Anchor, Button, Checkbox, PasswordInput, Stack, Text, TextInput, Title } from '@mantine/core';
 import { hasLength, isEmail, matchesField, useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
@@ -49,12 +50,12 @@ export function RegisterForm({ next }: { next?: string }) {
       });
   });
 
-  const loginHref = next ? `/masuk?next=${encodeURIComponent(target)}` : '/masuk';
+  const loginHref = next ? `/login?next=${encodeURIComponent(target)}` : '/login';
 
   return (
     <Stack gap="lg">
       <div>
-        <Title order={1} fz={{ base: 26, sm: 30 }}>
+        <Title order={1} fz={PAGE_TITLE_FZ}>
           Buat akun Soalnya
         </Title>
         <Text c="dimmed" mt={6}>

@@ -4,17 +4,12 @@ import logging
 import re
 
 from app.schemas.api_schemas import GenerateParams
+from app.services.generation.planner import MIXED_BLOOM_LEVELS
 
 logger = logging.getLogger(__name__)
 
-BLOOM_MAPPING = {
-    "C1": "C1-Mengingat",
-    "C2": "C2-Memahami",
-    "C3": "C3-Mengaplikasikan",
-    "C4": "C4-Menganalisis",
-    "C5": "C5-Mengevaluasi",
-    "C6": "C6-Mencipta",
-}
+# SD only covers C1-C4; C5/C6 in a message are ignored (falls back to mixed levels)
+BLOOM_MAPPING = {level[:2]: level for level in MIXED_BLOOM_LEVELS}
 
 MAX_QUESTIONS_PER_REQUEST = 20
 DEFAULT_NUM_QUESTIONS = 5
@@ -35,7 +30,7 @@ def is_generation_intent(text: str) -> bool:
         return True
 
     # 3. Bloom level code with an educational keyword: "soal c2", "c4 bab 3"
-    if re.search(r'\b(c[1-6])\b', t) and any(w in t for w in ['soal', 'bab', 'esai', 'isian', 'buat', 'materi', 'level']):
+    if re.search(r'\b(c[1-4])\b', t) and any(w in t for w in ['soal', 'bab', 'esai', 'isian', 'buat', 'materi', 'level']):
         return True
 
     # 4. Question type with generation/chapter context
@@ -47,7 +42,7 @@ def is_generation_intent(text: str) -> bool:
     # 5. Question noun + topic/chapter/level
     return bool(
         any(w in t for w in ['soal', 'pertanyaan'])
-        and any(w in t for w in ['bab', 'materi', 'tema', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'tingkat', 'level'])
+        and any(w in t for w in ['bab', 'materi', 'tema', 'c1', 'c2', 'c3', 'c4', 'tingkat', 'level'])
     )
 
 
@@ -61,7 +56,7 @@ def parse_generation_params(text: str) -> GenerateParams:
     if match_num:
         num_questions = max(1, min(MAX_QUESTIONS_PER_REQUEST, int(match_num.group(1))))
 
-    match_bloom = re.search(r'\b(C[1-6])\b', text, re.IGNORECASE)
+    match_bloom = re.search(r'\b(C[1-4])\b', text, re.IGNORECASE)
     if match_bloom:
         bloom_level = BLOOM_MAPPING.get(match_bloom.group(1).upper())
 

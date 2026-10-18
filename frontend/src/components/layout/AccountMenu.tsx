@@ -136,10 +136,10 @@ function GuestCard({ onOpenSettings }: { onOpenSettings: () => void }) {
         Masuk agar dokumen dan soal tersimpan permanen.
       </Text>
       <Group gap="xs" grow>
-        <Button component={Link} href={`/masuk${next}`} size="xs">
+        <Button component={Link} href={`/login${next}`} size="xs">
           Masuk
         </Button>
-        <Button component={Link} href={`/daftar${next}`} size="xs" variant="default">
+        <Button component={Link} href={`/register${next}`} size="xs" variant="default">
           Daftar
         </Button>
       </Group>

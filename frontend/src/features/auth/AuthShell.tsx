@@ -1,16 +1,52 @@
 'use client';
 
-import { Badge, Box, Group, Stack, Text, Title } from '@mantine/core';
-import { IconBooks, IconCircleCheck, IconShieldCheck, IconStairsUp } from '@tabler/icons-react';
+import { Box, Group, Text, Title } from '@mantine/core';
+import { IconBooks, IconCheck, IconCircleCheck, IconShieldCheck, IconStairsUp } from '@tabler/icons-react';
 import { LogoMark } from '@/components/brand/LogoMark';
 import { ColorSchemeToggle } from '@/components/layout/ColorSchemeToggle';
 import classes from './auth.module.css';
 
 const FEATURES = [
-  { icon: IconBooks, title: 'Dari isi bukumu sendiri', text: 'Setiap soal bersumber dari bab yang kamu unggah.' },
-  { icon: IconStairsUp, title: 'Level Bloom C1–C6', text: 'Atur tingkat berpikir sesuai tujuan pembelajaran.' },
-  { icon: IconShieldCheck, title: 'Divalidasi berlapis', text: 'Soal dicek otomatis sebelum masuk Bank Soal.' },
+  { icon: IconBooks, label: 'Soal bersumber dari bab buku yang diunggah' },
+  { icon: IconStairsUp, label: 'Level Bloom C1–C4 sesuai jenjang SD' },
+  { icon: IconShieldCheck, label: 'Divalidasi otomatis sebelum masuk Bank Soal' },
 ];
+
+const OPTIONS = [
+  { key: 'A', text: 'Sebagai sumber energi untuk membuat makanan', correct: true },
+  { key: 'B', text: 'Untuk menyerap air dari dalam tanah' },
+  { key: 'C', text: 'Agar daun tetap berwarna hijau' },
+];
+
+/** Contoh kartu soal sebagai ilustrasi hasil, murni dekoratif. */
+function SampleQuestion() {
+  return (
+    <div className={classes.sample} aria-hidden>
+      <div className={classes.card}>
+        <Group justify="space-between" mb={10} wrap="nowrap">
+          <span className={classes.bloom}>C2 · Memahami</span>
+          <Group gap={4} wrap="nowrap" c="green.8">
+            <IconCircleCheck size={15} />
+            <Text size="xs" fw={600} c="green.8">
+              Lolos validasi
+            </Text>
+          </Group>
+        </Group>
+        <Text size="sm" fw={600} c="dark.8" lh={1.45} mb={10}>
+          Mengapa tumbuhan membutuhkan cahaya matahari dalam proses fotosintesis?
+        </Text>
+        <div className={classes.options}>
+          {OPTIONS.map((o) => (
+            <div key={o.key} className={classes.option} data-correct={o.correct || undefined}>
+              <span className={classes.optionKey}>{o.correct ? <IconCheck size={12} stroke={3} /> : o.key}</span>
+              <span>{o.text}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function BrandPanel() {
   return (
@@ -22,46 +58,23 @@ function BrandPanel() {
         </Text>
       </Group>
 
-      <Stack gap="xl" maw={460}>
-        <Title order={2} fz={{ md: 30, lg: 36 }} lh={1.2} c="white">
-          Ubah buku pelajaran menjadi bank soal yang siap pakai.
+      <div className={classes.hero}>
+        <Title order={2} fz={{ md: 30, lg: 36 }} lh={1.2} c="white" maw={460}>
+          Ubah buku pelajaran menjadi <span className={classes.highlight}>bank soal</span> yang siap pakai.
         </Title>
-        <Stack gap="md" component="ul" m={0} p={0} style={{ listStyle: 'none' }}>
-          {FEATURES.map(({ icon: Icon, title, text }) => (
-            <Group key={title} component="li" gap="sm" wrap="nowrap" align="flex-start">
-              <span className={classes.featureIcon}>
-                <Icon size={20} stroke={1.75} aria-hidden />
-              </span>
-              <Box>
-                <Text fw={600} c="white">
-                  {title}
-                </Text>
-                <Text size="sm" c="indigo.1">
-                  {text}
-                </Text>
-              </Box>
-            </Group>
-          ))}
-        </Stack>
-      </Stack>
+        <SampleQuestion />
+      </div>
 
-      {/* Contoh kartu soal sebagai ilustrasi hasil, murni dekoratif. */}
-      <Box className={classes.sample} aria-hidden>
-        <Group justify="space-between" mb={8}>
-          <Badge color="accent.4" c="dark.9" variant="filled">
-            C2 · Memahami
-          </Badge>
-          <Group gap={4} c="green.2">
-            <IconCircleCheck size={16} />
-            <Text size="xs" fw={600}>
-              Lolos validasi
+      <ul className={classes.features}>
+        {FEATURES.map(({ icon: Icon, label }) => (
+          <li key={label}>
+            <Icon size={18} stroke={1.75} aria-hidden />
+            <Text size="sm" c="indigo.0">
+              {label}
             </Text>
-          </Group>
-        </Group>
-        <Text size="sm" c="white" fw={500}>
-          Mengapa tumbuhan membutuhkan cahaya matahari dalam proses fotosintesis?
-        </Text>
-      </Box>
+          </li>
+        ))}
+      </ul>
     </Box>
   );
 }

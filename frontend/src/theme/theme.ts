@@ -52,16 +52,14 @@ export const theme = createTheme({
 });
 
 /**
- * Warna badge per level Bloom (C1–C6). Shade dipilih eksplisit supaya teks putih
- * di atasnya tetap ≥ 4.5:1 (gray.7 8.2 · blue.8 5.0 · cyan.9 5.6 · teal.7 5.5 · violet.7 5.6 · grape.8 5.8).
+ * Warna badge per level Bloom. Soalnya untuk SD, jadi hanya C1–C4 (sama dengan backend).
+ * Shade dipilih eksplisit supaya teks putih di atasnya tetap ≥ 4.5:1 (gray.7 8.2 · blue.8 5.0 · cyan.9 5.6 · teal.7 5.5).
  */
 export const BLOOM_COLORS: Record<string, string> = {
   C1: 'gray.7',
   C2: 'blue.8',
   C3: 'cyan.9',
   C4: 'teal.7',
-  C5: 'violet.7',
-  C6: 'grape.8',
 };
 
 /** Ubah "cyan.9" menjadi CSS variable Mantine (`var(--mantine-color-cyan-9)`). */
@@ -75,6 +73,4 @@ export const BLOOM_LEVELS = [
   { value: 'C2', label: 'C2 · Memahami' },
   { value: 'C3', label: 'C3 · Mengaplikasikan' },
   { value: 'C4', label: 'C4 · Menganalisis' },
-  { value: 'C5', label: 'C5 · Mengevaluasi' },
-  { value: 'C6', label: 'C6 · Mencipta' },
 ];

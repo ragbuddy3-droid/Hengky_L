@@ -66,7 +66,7 @@ export function SourcesTab({ question }: { question: QuestionDetail }) {
               </Card>
             ))}
             {documentId && (
-              <Anchor component={Link} href={`/dokumen/${documentId}`} size="sm">
+              <Anchor component={Link} href={`/documents/${documentId}`} size="sm">
                 Lihat semua potongan teks buku ini →
               </Anchor>
             )}

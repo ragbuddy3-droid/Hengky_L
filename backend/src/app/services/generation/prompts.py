@@ -78,7 +78,7 @@ OUTPUT JSON:
 STAGE2_COGNITIVE_PLANNING_PROMPT = """Rancang cognitive plan untuk soal evaluasi berdasarkan data berikut.
 
 TARGET COGNITIVE LEVEL: {target_bloom_level}
-Cakupan level yang diizinkan HANYA: C1-Mengingat, C2-Memahami, C3-Menerapkan, C4-Menganalisis. Level C5-Mengevaluasi dan C6-Mencipta TIDAK BOLEH digunakan untuk jenjang SD.
+Cakupan level yang diizinkan HANYA: C1-Mengingat, C2-Memahami, C3-Mengaplikasikan, C4-Menganalisis. Level C5-Mengevaluasi dan C6-Mencipta TIDAK BOLEH digunakan untuk jenjang SD.
 
 Jika {target_bloom_level} berada di luar C1-C4, kembalikan status "invalid_level" dan hentikan proses tanpa melanjutkan ke bagian lain.
 
@@ -90,7 +90,7 @@ Panduan operasi kognitif per level untuk siswa SD (6-12 tahun):
   -> cocok format: isian_singkat
 - C2 (Memahami): menjelaskan konsep, proses, atau fungsi dengan kata-kata sendiri yang mudah dipahami anak SD.
   -> cocok format: isian_singkat atau esai_pendek
-- C3 (Menerapkan): menggunakan konsep sains pada situasi/peristiwa sehari-hari anak SD (memerlukan skenario/stimulus kontekstual nyata).
+- C3 (Mengaplikasikan): menggunakan konsep sains pada situasi/peristiwa sehari-hari anak SD (memerlukan skenario/stimulus kontekstual nyata).
   -> cocok format: esai_pendek (harus memiliki skenario pendek)
 - C4 (Menganalisis): menelaah sebab-akibat, membandingkan dua kondisi, atau memprediksi akibat suatu perubahan (memerlukan stimulus kasus sederhana).
   -> cocok format: esai (harus memiliki narasi kasus sebab-akibat)

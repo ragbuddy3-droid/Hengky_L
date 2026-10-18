@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { PAGE_TITLE_FZ } from '@/components/common/PageHeader';
 import { Button, Center, Group, Paper, Select, Skeleton, Stack, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconBooks, IconSparkles } from '@tabler/icons-react';
@@ -45,7 +46,7 @@ export function NewChatView() {
             : 'Unggah buku pelajaran terlebih dahulu sebagai sumber soal.'
         }
         action={
-          <Button component={Link} href="/dokumen">
+          <Button component={Link} href="/documents">
             Ke halaman Dokumen
           </Button>
         }
@@ -86,7 +87,7 @@ export function NewChatView() {
       <Stack w="100%" maw={560} gap="lg">
         <Stack align="center" gap="xs" ta="center">
           <LogoMark size={56} />
-          <Title order={1} fz={{ base: 24, sm: 30 }}>
+          <Title order={1} fz={PAGE_TITLE_FZ}>
             Buat soal dari buku
           </Title>
           <Text c="dimmed" maw={460}>

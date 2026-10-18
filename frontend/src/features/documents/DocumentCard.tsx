@@ -9,7 +9,7 @@ import type { DocumentItem } from '@/types/document';
 import { GenerateQuestionsButton } from './GenerateQuestionsButton';
 
 export function DocumentCard({ doc, onDelete }: { doc: DocumentItem; onDelete: (doc: DocumentItem) => void }) {
-  const href = `/dokumen/${doc.id}`;
+  const href = `/documents/${doc.id}`;
 
   return (
     <Card padding="md" h="100%">

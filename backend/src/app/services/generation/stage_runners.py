@@ -12,6 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
 from app.core.config import get_settings
+from app.services.generation.planner import normalize_bloom_level
 from app.services.generation.prompts import (
     LLM_JUDGE_PROMPT,
     REFINEMENT_PROMPT_A,
@@ -43,11 +44,6 @@ logger = logging.getLogger(__name__)
 
 # The judge sees the same material the generator used: the question's own chunk (~1000 chars with fixed chunking).
 JUDGE_CONTEXT_CHARS = 1500
-
-_ALLOWED_BLOOM_LEVELS = {
-    "C1", "C2", "C3", "C4",
-    "C1-Mengingat", "C2-Memahami", "C3-Menerapkan", "C3-Mengaplikasikan", "C4-Menganalisis",
-}
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -206,7 +202,7 @@ async def run_stage2_cognitive_planning(
     attempt: int = 1,
 ) -> tuple[CognitivePlan, PromptStageTrace]:
     """Stage 2: Cognitive Bloom Planning (C1-C4 only)."""
-    clean_bloom = target_bloom_level if target_bloom_level in _ALLOWED_BLOOM_LEVELS else "C2-Memahami"
+    clean_bloom = normalize_bloom_level(target_bloom_level) or "C2-Memahami"
     return await _run_stage(
         chat_model,
         SYSTEM_DESIGNER_PERSONA,

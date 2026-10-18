@@ -16,13 +16,18 @@
   display: none;
   position: relative;
   overflow: hidden;
+  isolation: isolate;
   color: var(--mantine-color-white);
-  background: linear-gradient(155deg, var(--mantine-color-indigo-7) 0%, var(--mantine-color-indigo-9) 100%);
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(129, 140, 248, 0.35) 0%, transparent 55%),
+    linear-gradient(160deg, var(--mantine-color-indigo-7) 0%, var(--mantine-color-indigo-9) 100%);
 }
 
 @mixin dark {
   .brand {
-    background: linear-gradient(155deg, var(--mantine-color-indigo-9) 0%, var(--mantine-color-dark-8) 100%);
+    background:
+      radial-gradient(120% 80% at 0% 0%, rgba(99, 102, 241, 0.28) 0%, transparent 55%),
+      linear-gradient(160deg, var(--mantine-color-indigo-9) 0%, var(--mantine-color-dark-8) 100%);
   }
 }
 
@@ -31,45 +36,175 @@
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    gap: var(--mantine-spacing-xl);
-    padding: rem(48px);
+    gap: rem(32px);
+    padding: rem(44px) rem(48px);
   }
 }
 
-/* Cahaya amber lembut di pojok, senada dengan percikan logo. */
+/* Tekstur titik halus yang memudar ke tepi. */
 .brand::before {
   content: '';
   position: absolute;
-  inset: auto -20% -30% auto;
-  width: 70%;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(251, 191, 36, 0.22) 0%, transparent 65%);
+  inset: 0;
+  z-index: -1;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.16) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 80% 70% at 60% 55%, #000 20%, transparent 75%);
   pointer-events: none;
 }
 
-.brand > * {
-  position: relative;
+/* Cahaya amber lembut di belakang ilustrasi, senada dengan percikan logo. */
+.brand::after {
+  content: '';
+  position: absolute;
+  right: -15%;
+  bottom: 10%;
+  z-index: -1;
+  width: 75%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(251, 191, 36, 0.2) 0%, transparent 62%);
+  pointer-events: none;
 }
 
-.featureIcon {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: rem(36px);
-  height: rem(36px);
-  border-radius: var(--mantine-radius-md);
-  background: rgba(255, 255, 255, 0.12);
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: rem(36px);
+}
+
+.highlight {
+  position: relative;
+  white-space: nowrap;
   color: var(--mantine-color-accent-3);
 }
 
+.highlight::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.08em;
+  z-index: -1;
+  height: 0.38em;
+  border-radius: 4px;
+  background: rgba(251, 191, 36, 0.22);
+}
+
+/* ---------- Contoh kartu soal ---------- */
 .sample {
-  max-width: rem(380px);
-  padding: var(--mantine-spacing-md);
+  position: relative;
+  max-width: rem(400px);
+  margin-right: rem(16px);
+  animation: float 6s ease-in-out infinite;
+}
+
+/* Satu kartu bayangan di belakang memberi kesan "tumpukan soal". */
+.sample::before {
+  content: '';
+  position: absolute;
+  inset: 0;
   border-radius: var(--mantine-radius-lg);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.14);
+  transform: translate(14px, 12px) rotate(3deg);
+}
+
+.card {
+  position: relative;
+  padding: rem(16px);
+  border-radius: var(--mantine-radius-lg);
+  background: var(--mantine-color-white);
+  transform: rotate(-1.5deg);
+  box-shadow:
+    0 24px 48px -12px rgba(15, 23, 42, 0.45),
+    0 2px 6px rgba(15, 23, 42, 0.12);
+}
+
+.bloom {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: rem(11px);
+  font-weight: 700;
+  color: var(--mantine-color-accent-9);
+  background: var(--mantine-color-accent-2);
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--mantine-radius-sm);
+  border: 1px solid var(--mantine-color-gray-2);
+  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-gray-7);
+}
+
+.option[data-correct] {
+  border-color: var(--mantine-color-green-3);
+  background: var(--mantine-color-green-0);
+  color: var(--mantine-color-green-9);
+  font-weight: 600;
+}
+
+.optionKey {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--mantine-color-gray-1);
+  color: var(--mantine-color-gray-7);
+}
+
+.option[data-correct] .optionKey {
+  background: var(--mantine-color-green-7);
+  color: var(--mantine-color-white);
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sample {
+    animation: none;
+  }
+}
+
+/* Layar pendek: sembunyikan ilustrasi agar panel tidak sesak. */
+@media (max-height: 760px) {
+  .sample {
+    display: none;
+  }
+}
+
+/* ---------- Fitur ringkas ---------- */
+.features {
+  display: flex;
+  flex-direction: column;
+  gap: rem(10px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.features li {
+  display: flex;
+  align-items: center;
+  gap: rem(10px);
+  color: var(--mantine-color-accent-3);
 }
 
 .formSide {

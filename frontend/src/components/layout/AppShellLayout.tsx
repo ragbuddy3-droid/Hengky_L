@@ -12,8 +12,8 @@ import { NavbarSessions } from './NavbarSessions';
 
 const NAV_ITEMS = [
   { href: '/chat', label: 'Chat', icon: IconMessageCircle },
-  { href: '/dokumen', label: 'Dokumen', icon: IconBooks },
-  { href: '/soal', label: 'Bank Soal', icon: IconListCheck },
+  { href: '/documents', label: 'Dokumen', icon: IconBooks },
+  { href: '/questions', label: 'Bank Soal', icon: IconListCheck },
 ];
 
 function Brand() {

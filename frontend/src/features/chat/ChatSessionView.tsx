@@ -93,7 +93,7 @@ export function ChatSessionView({ sessionId }: { sessionId: string }) {
           <Group gap="xs" wrap="nowrap" miw={0}>
             <IconBook2 size={18} aria-hidden style={{ flexShrink: 0 }} />
             {session ? (
-              <Anchor component={Link} href={`/dokumen/${session.document_id}`} fw={600} c="inherit" truncate>
+              <Anchor component={Link} href={`/documents/${session.document_id}`} fw={600} c="inherit" truncate>
                 {session.document_filename ?? 'Dokumen'}
               </Anchor>
             ) : (
