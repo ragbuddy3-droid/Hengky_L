@@ -1,12 +1,14 @@
-"""Stage runners for executing Multi-Stage AQG prompt templates with robust parsing and tracing."""
+"""Async stage runners for the Multi-Stage AQG prompts: every stage shares one invoke -> parse -> trace path."""
 
 import json
 import logging
 import re
 import time
-from typing import Any
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel
 
 from app.services.generation.prompts import (
     LLM_JUDGE_PROMPT,
@@ -14,6 +16,7 @@ from app.services.generation.prompts import (
     REFINEMENT_PROMPT_B,
     STAGE1_CONTEXT_UNDERSTANDING_PROMPT,
     STAGE2_COGNITIVE_PLANNING_PROMPT,
+    STAGE3_BATCH_BLUEPRINT_PROMPT,
     STAGE3_QUESTION_BLUEPRINT_PROMPT,
     STAGE4_QUESTION_GENERATION_PROMPT,
     SYSTEM_ANALYSIS_PERSONA,
@@ -23,6 +26,7 @@ from app.services.generation.prompts import (
     SYSTEM_REFINEMENT_PERSONA,
 )
 from app.services.generation.schemas import (
+    BlueprintBatch,
     CognitivePlan,
     ContentAnalysis,
     JudgeAspectResult,
@@ -30,12 +34,20 @@ from app.services.generation.schemas import (
     PromptStageTrace,
     QuestionBlueprint,
     QuestionPackage,
+    TestableContentItem,
 )
 
 logger = logging.getLogger(__name__)
 
-# The judge must see the same material the generator used (focus chunk + supporting context).
-JUDGE_CONTEXT_CHARS = 4500
+# The judge sees the same material the generator used: the question's own chunk (~1000 chars with fixed chunking).
+JUDGE_CONTEXT_CHARS = 1500
+
+_ALLOWED_BLOOM_LEVELS = {
+    "C1", "C2", "C3", "C4",
+    "C1-Mengingat", "C2-Memahami", "C3-Menerapkan", "C3-Mengaplikasikan", "C4-Menganalisis",
+}
+
+T = TypeVar("T", bound=BaseModel)
 
 
 # ── Text Cleaning & JSON Extraction Helpers ──
@@ -50,57 +62,43 @@ def strip_reasoning_tags(text: str) -> str:
 
 
 def clean_json_string(s: str) -> str:
-    """Clean trailing commas before closing braces/brackets and fix common syntax issues."""
+    """Strip markdown fences and trailing commas before closing braces/brackets."""
     if not s:
         return ""
-    # Strip markdown codeblocks markers if passed directly
     s = re.sub(r'^```(?:json)?\s*', '', s.strip(), flags=re.IGNORECASE)
     s = re.sub(r'\s*```$', '', s.strip(), flags=re.IGNORECASE)
-    # Remove trailing commas before closing braces or brackets
     s = re.sub(r',\s*([\]}])', r'\1', s)
     return s.strip()
+
+
+def _try_load_dict(text: str) -> dict[str, Any] | None:
+    try:
+        res = json.loads(clean_json_string(text), strict=False)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+    return res if isinstance(res, dict) else None
 
 
 def extract_json_object(response_text: str) -> dict[str, Any]:
     """Robust multi-tier JSON parser for single object model responses."""
     if not response_text:
         return {}
-
-    cleaned = strip_reasoning_tags(response_text)
-    text_to_search = cleaned if cleaned else response_text
+    text = strip_reasoning_tags(response_text) or response_text
 
     # Tier 1: Markdown code blocks ```json ... ```
-    code_blocks = re.findall(r'```(?:json)?\s*([\s\S]*?)\s*```', text_to_search, re.IGNORECASE)
-    for block in code_blocks:
-        b_clean = clean_json_string(block.strip())
-        try:
-            res = json.loads(b_clean, strict=False)
-            if isinstance(res, dict):
-                return res
-        except (json.JSONDecodeError, TypeError, ValueError):
-            pass
+    for block in re.findall(r'```(?:json)?\s*([\s\S]*?)\s*```', text, re.IGNORECASE):
+        if (res := _try_load_dict(block)) is not None:
+            return res
 
     # Tier 2: Outer brace search {...}
-    first_brace = text_to_search.find('{')
-    last_brace = text_to_search.rfind('}')
-    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
-        sub = clean_json_string(text_to_search[first_brace:last_brace + 1])
-        try:
-            res = json.loads(sub, strict=False)
-            if isinstance(res, dict):
-                return res
-        except (json.JSONDecodeError, TypeError, ValueError):
-            pass
+    first, last = text.find('{'), text.rfind('}')
+    if first != -1 and last > first and (res := _try_load_dict(text[first:last + 1])) is not None:
+        return res
 
     # Tier 3: Loose JSON regex match
-    pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
-    for m in re.finditer(pattern, text_to_search):
-        try:
-            res = json.loads(clean_json_string(m.group(0)), strict=False)
-            if isinstance(res, dict):
-                return res
-        except (json.JSONDecodeError, TypeError, ValueError):
-            pass
+    for m in re.finditer(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text):
+        if (res := _try_load_dict(m.group(0))) is not None:
+            return res
 
     return {}
 
@@ -119,53 +117,43 @@ def _compact_content_analysis(ca: ContentAnalysis) -> str:
     return json.dumps(pruned, ensure_ascii=False)
 
 
-# ── Stage Runners ──
+# ── Generic Stage Execution ──
 
-def run_stage1_context_understanding(
+async def _run_stage(
     chat_model: Any,
-    retrieved_context: str,
-    attempt: int = 1
-) -> tuple[ContentAnalysis, PromptStageTrace]:
-    """Stage 1: Execute Context Understanding Prompt."""
-    prompt_text = STAGE1_CONTEXT_UNDERSTANDING_PROMPT.format(
-        retrieved_context=retrieved_context
-    )
-
-    t0 = time.time()
+    persona: str,
+    prompt_text: str,
+    schema: type[T],
+    stage_name: str,
+    step_number: int,
+    attempt: int,
+    fallback: Callable[[], T],
+    error_status: str = "fallback",
+) -> tuple[T, PromptStageTrace]:
+    """Invoke the model, parse its JSON into `schema`, and record a trace; use `fallback()` on any failure."""
+    t0 = time.perf_counter()
     raw_response = ""
     status = "success"
     err_msg = None
 
     try:
-        resp = chat_model.invoke([
-            SystemMessage(content=SYSTEM_ANALYSIS_PERSONA),
-            HumanMessage(content=prompt_text),
-        ])
+        resp = await chat_model.ainvoke([SystemMessage(content=persona), HumanMessage(content=prompt_text)])
         raw_response = resp.content if isinstance(resp.content, str) else str(resp.content)
-        parsed_dict = extract_json_object(raw_response)
-        parsed_obj = ContentAnalysis.model_validate(parsed_dict)
+        parsed_obj = schema.model_validate(extract_json_object(raw_response))
     except Exception as e:
-        logger.error("[Stage 1 Runner] Error: %s", e)
-        status = "fallback"
+        logger.error("[%s] Error: %s", stage_name, e)
+        status = error_status
         err_msg = str(e)
-        parsed_dict = {
-            "topic": "Materi Pembelajaran",
-            "subtopics": [],
-            "key_concepts": [],
-            "key_facts": [],
-            "testable_content": [{"point": "Konsep dasar", "source_quote": retrieved_context[:200]}]
-        }
-        parsed_obj = ContentAnalysis.model_validate(parsed_dict)
+        parsed_obj = fallback()
 
-    latency = int((time.time() - t0) * 1000)
     trace = PromptStageTrace(
-        stage_name="Stage 1: Context Understanding",
-        step_number=1,
+        stage_name=stage_name,
+        step_number=step_number,
         attempt_number=attempt,
         prompt_sent=prompt_text,
         raw_response=raw_response,
         parsed_output=parsed_obj.model_dump(),
-        latency_ms=latency,
+        latency_ms=int((time.perf_counter() - t0) * 1000),
         status=status,
         error_message=err_msg,
         has_fallback=(status == "fallback"),
@@ -173,201 +161,180 @@ def run_stage1_context_understanding(
     return parsed_obj, trace
 
 
-def run_stage2_cognitive_planning(
+# ── Stage Runners ──
+
+async def run_stage1_context_understanding(
+    chat_model: Any,
+    retrieved_context: str,
+    attempt: int = 1,
+) -> tuple[ContentAnalysis, PromptStageTrace]:
+    """Stage 1: Context Understanding (one call per chunk)."""
+    return await _run_stage(
+        chat_model,
+        SYSTEM_ANALYSIS_PERSONA,
+        STAGE1_CONTEXT_UNDERSTANDING_PROMPT.format(retrieved_context=retrieved_context),
+        ContentAnalysis,
+        "Stage 1: Context Understanding",
+        1,
+        attempt,
+        lambda: ContentAnalysis(
+            topic="Materi Pembelajaran",
+            testable_content=[TestableContentItem(point="Konsep dasar", source_quote=retrieved_context[:200])],
+        ),
+    )
+
+
+async def run_stage2_cognitive_planning(
     chat_model: Any,
     content_analysis: ContentAnalysis,
     target_bloom_level: str,
-    attempt: int = 1
+    attempt: int = 1,
 ) -> tuple[CognitivePlan, PromptStageTrace]:
-    """Stage 2: Execute Cognitive Bloom Planning Prompt (C1-C4 only)."""
-    clean_bloom = (
-        target_bloom_level
-        if target_bloom_level in [
-            "C1", "C2", "C3", "C4",
-            "C1-Mengingat", "C2-Memahami", "C3-Menerapkan",
-            "C4-Menganalisis", "C3-Mengaplikasikan",
-        ]
-        else "C2-Memahami"
+    """Stage 2: Cognitive Bloom Planning (C1-C4 only)."""
+    clean_bloom = target_bloom_level if target_bloom_level in _ALLOWED_BLOOM_LEVELS else "C2-Memahami"
+    return await _run_stage(
+        chat_model,
+        SYSTEM_DESIGNER_PERSONA,
+        STAGE2_COGNITIVE_PLANNING_PROMPT.format(
+            target_bloom_level=clean_bloom,
+            content_analysis=_compact_content_analysis(content_analysis),
+        ),
+        CognitivePlan,
+        "Stage 2: Cognitive Bloom Planning",
+        2,
+        attempt,
+        lambda: CognitivePlan(
+            cognitive_level=clean_bloom,
+            cognitive_operation="Memahami dan menjelaskan konsep utama",
+            student_task="Menjelaskan konsep sesuai isi teks buku",
+            reasoning_required="Pemahaman makna istilah/konsep",
+            expected_evidence="Menyebutkan poin-poin penjelasan",
+            recommended_question_format="esai",
+            prohibited_question_pattern=["Apa yang kamu rasakan", "Apa tujuan pembelajaran"],
+        ),
     )
 
-    prompt_text = STAGE2_COGNITIVE_PLANNING_PROMPT.format(
-        target_bloom_level=clean_bloom,
-        content_analysis=_compact_content_analysis(content_analysis)
+
+def _fallback_blueprint(point: str, quote: str, plan: CognitivePlan) -> QuestionBlueprint:
+    return QuestionBlueprint(
+        knowledge_point=point or "Materi Pokok",
+        question_type=plan.recommended_question_format or "esai",
+        question_intent=plan.student_task or "Menguji pemahaman materi",
+        grounding_evidence=quote,
+        expected_answer_summary=quote,
+        answer_scope="1-2 kalimat sederhana",
     )
 
-    t0 = time.time()
-    raw_response = ""
-    status = "success"
-    err_msg = None
 
-    try:
-        resp = chat_model.invoke([
-            SystemMessage(content=SYSTEM_DESIGNER_PERSONA),
-            HumanMessage(content=prompt_text),
-        ])
-        raw_response = resp.content if isinstance(resp.content, str) else str(resp.content)
-        parsed_dict = extract_json_object(raw_response)
-        parsed_obj = CognitivePlan.model_validate(parsed_dict)
-    except Exception as e:
-        logger.error("[Stage 2 Runner] Error: %s", e)
-        status = "fallback"
-        err_msg = str(e)
-        parsed_dict = {
-            "cognitive_level": clean_bloom,
-            "cognitive_operation": "Memahami dan menjelaskan konsep utama",
-            "student_task": "Menjelaskan konsep sesuai isi teks buku",
-            "reasoning_required": "Pemahaman makna istilah/konsep",
-            "expected_evidence": "Menyebutkan poin-poin penjelasan",
-            "recommended_question_format": "esai",
-            "prohibited_question_pattern": ["Apa yang kamu rasakan", "Apa tujuan pembelajaran"]
-        }
-        parsed_obj = CognitivePlan.model_validate(parsed_dict)
-
-    latency = int((time.time() - t0) * 1000)
-    trace = PromptStageTrace(
-        stage_name="Stage 2: Cognitive Bloom Planning",
-        step_number=2,
-        attempt_number=attempt,
-        prompt_sent=prompt_text,
-        raw_response=raw_response,
-        parsed_output=parsed_obj.model_dump(),
-        latency_ms=latency,
-        status=status,
-        error_message=err_msg,
-        has_fallback=(status == "fallback"),
-    )
-    return parsed_obj, trace
-
-
-def run_stage3_question_blueprint(
+async def run_stage3_question_blueprint(
     chat_model: Any,
     content_analysis: ContentAnalysis,
     cognitive_plan: CognitivePlan,
     focus_knowledge_point: str | None = None,
-    attempt: int = 1
+    attempt: int = 1,
 ) -> tuple[QuestionBlueprint, PromptStageTrace]:
-    """Stage 3: Execute Question Blueprint Prompt with optional target knowledge point focus."""
-    compact_ca_str = _compact_content_analysis(content_analysis)
-
+    """Stage 3: Question Blueprint for one knowledge point (used when refinement re-plans a single question)."""
     prompt_text = STAGE3_QUESTION_BLUEPRINT_PROMPT.format(
-        content_analysis=compact_ca_str,
-        cognitive_plan=json.dumps(cognitive_plan.model_dump(), ensure_ascii=False)
+        content_analysis=_compact_content_analysis(content_analysis),
+        cognitive_plan=json.dumps(cognitive_plan.model_dump(), ensure_ascii=False),
     )
     if focus_knowledge_point:
         prompt_text += f"\n\nCATATAN KHUSUS: Rancang blueprint ini KHUSUS menguji poin materi berikut: '{focus_knowledge_point}'."
 
-    t0 = time.time()
-    raw_response = ""
-    status = "success"
-    err_msg = None
-
-    try:
-        resp = chat_model.invoke([
-            SystemMessage(content=SYSTEM_DESIGNER_PERSONA),
-            HumanMessage(content=prompt_text),
-        ])
-        raw_response = resp.content if isinstance(resp.content, str) else str(resp.content)
-        parsed_dict = extract_json_object(raw_response)
-        parsed_obj = QuestionBlueprint.model_validate(parsed_dict)
-    except Exception as e:
-        logger.error("[Stage 3 Runner] Error: %s", e)
-        status = "fallback"
-        err_msg = str(e)
+    def fallback() -> QuestionBlueprint:
         quote = ""
         if content_analysis.testable_content:
             quote = content_analysis.testable_content[0].source_quote
         elif content_analysis.key_facts:
             quote = content_analysis.key_facts[0]
+        return _fallback_blueprint(focus_knowledge_point or content_analysis.topic, quote, cognitive_plan)
 
-        parsed_dict = {
-            "knowledge_point": focus_knowledge_point or content_analysis.topic or "Materi Pokok",
-            "question_type": cognitive_plan.recommended_question_format or "esai",
-            "question_intent": cognitive_plan.student_task or "Menguji pemahaman materi",
-            "grounding_evidence": quote,
-            "expected_answer_summary": quote,
-            "answer_scope": "1-2 kalimat sederhana"
-        }
-        parsed_obj = QuestionBlueprint.model_validate(parsed_dict)
-
-    latency = int((time.time() - t0) * 1000)
-    trace = PromptStageTrace(
-        stage_name="Stage 3: Question Blueprint",
-        step_number=3,
-        attempt_number=attempt,
-        prompt_sent=prompt_text,
-        raw_response=raw_response,
-        parsed_output=parsed_obj.model_dump(),
-        latency_ms=latency,
-        status=status,
-        error_message=err_msg,
-        has_fallback=(status == "fallback"),
+    return await _run_stage(
+        chat_model, SYSTEM_DESIGNER_PERSONA, prompt_text, QuestionBlueprint,
+        "Stage 3: Question Blueprint", 3, attempt, fallback,
     )
-    return parsed_obj, trace
 
 
-def run_stage4_question_generation(
+async def run_stage3_blueprint_batch(
+    chat_model: Any,
+    chunk_text: str,
+    items: list[dict[str, Any]],
+    plans: dict[str, CognitivePlan],
+    attempt: int = 1,
+) -> tuple[list[QuestionBlueprint], list[bool], PromptStageTrace]:
+    """Stage 3 Batch: blueprints for all questions of one chunk in a single call.
+
+    `items` carry "point", "quote", and "bloom_level". Seeing its siblings lets the model give every
+    question a different angle. Returns (blueprints aligned with items, per-item fallback flags, trace);
+    an item the model skipped gets a fallback blueprint built from its own quote.
+    """
+    levels = list(dict.fromkeys(it["bloom_level"] for it in items))
+    item_lines = "\n".join(
+        f"{n}. poin: {it['point']}\n   kutipan: {it.get('quote', '')}\n   level: {it['bloom_level']}"
+        for n, it in enumerate(items, 1)
+    )
+    prompt_text = STAGE3_BATCH_BLUEPRINT_PROMPT.format(
+        chunk_text=chunk_text,
+        cognitive_plans=json.dumps({lvl: plans[lvl].model_dump() for lvl in levels}, ensure_ascii=False),
+        items=item_lines,
+    )
+    batch, trace = await _run_stage(
+        chat_model, SYSTEM_DESIGNER_PERSONA, prompt_text, BlueprintBatch,
+        "Stage 3: Question Blueprint (batch per chunk)", 3, attempt, BlueprintBatch,
+    )
+
+    by_item = {bp.item: bp for bp in batch.blueprints if bp.item is not None}
+    use_numbers = len(by_item) == len(batch.blueprints) and set(by_item) <= set(range(1, len(items) + 1))
+    blueprints: list[QuestionBlueprint] = []
+    fallbacks: list[bool] = []
+    for n, it in enumerate(items, 1):
+        bp = by_item.get(n) if use_numbers else (batch.blueprints[n - 1] if n <= len(batch.blueprints) else None)
+        if bp is None:
+            blueprints.append(_fallback_blueprint(it["point"], it.get("quote", ""), plans[it["bloom_level"]]))
+            fallbacks.append(True)
+        else:
+            blueprints.append(QuestionBlueprint.model_validate(bp.model_dump(exclude={"item"})))
+            fallbacks.append(False)
+    return blueprints, fallbacks, trace
+
+
+async def run_stage4_question_generation(
     chat_model: Any,
     retrieved_context: str,
     blueprint: QuestionBlueprint,
     target_bloom_level: str,
     question_type: str = "esai",
     few_shot_examples: str = "Tidak ada contoh tambahan.",
-    attempt: int = 1
+    attempt: int = 1,
 ) -> tuple[QuestionPackage, PromptStageTrace]:
-    """Stage 4: Execute Question Generation Prompt (Question + Answer + Explanation)."""
-    prompt_text = STAGE4_QUESTION_GENERATION_PROMPT.format(
-        retrieved_context=retrieved_context,
-        question_blueprint=json.dumps(blueprint.model_dump(), ensure_ascii=False),
-        few_shot_examples=few_shot_examples or "Tidak ada contoh tambahan.",
-        question_type=question_type,
-        target_bloom_level=target_bloom_level
+    """Stage 4: Question Generation (Question + Answer + Explanation)."""
+    return await _run_stage(
+        chat_model,
+        SYSTEM_GENERATOR_PERSONA,
+        STAGE4_QUESTION_GENERATION_PROMPT.format(
+            retrieved_context=retrieved_context,
+            question_blueprint=json.dumps(blueprint.model_dump(), ensure_ascii=False),
+            few_shot_examples=few_shot_examples or "Tidak ada contoh tambahan.",
+            question_type=question_type,
+            target_bloom_level=target_bloom_level,
+        ),
+        QuestionPackage,
+        "Stage 4: Question Generation",
+        4,
+        attempt,
+        lambda: QuestionPackage(
+            question=f"Jelaskan {blueprint.knowledge_point} berdasarkan materi yang dipelajari!",
+            question_type=question_type,
+            cognitive_level=target_bloom_level,
+            knowledge_point=blueprint.knowledge_point,
+            grounding_evidence=blueprint.grounding_evidence,
+            expected_answer=blueprint.grounding_evidence or "Jawaban sesuai materi buku.",
+            explanation=f"Materi ini merujuk pada konsep '{blueprint.knowledge_point}' dalam buku.",
+        ),
     )
 
-    t0 = time.time()
-    raw_response = ""
-    status = "success"
-    err_msg = None
 
-    try:
-        resp = chat_model.invoke([
-            SystemMessage(content=SYSTEM_GENERATOR_PERSONA),
-            HumanMessage(content=prompt_text),
-        ])
-        raw_response = resp.content if isinstance(resp.content, str) else str(resp.content)
-        parsed_dict = extract_json_object(raw_response)
-        parsed_obj = QuestionPackage.model_validate(parsed_dict)
-    except Exception as e:
-        logger.error("[Stage 4 Runner] Error: %s", e)
-        status = "fallback"
-        err_msg = str(e)
-        parsed_dict = {
-            "question": f"Jelaskan {blueprint.knowledge_point} berdasarkan materi yang dipelajari!",
-            "question_type": question_type,
-            "cognitive_level": target_bloom_level,
-            "knowledge_point": blueprint.knowledge_point,
-            "grounding_evidence": blueprint.grounding_evidence,
-            "expected_answer": blueprint.grounding_evidence or "Jawaban sesuai materi buku.",
-            "explanation": f"Materi ini merujuk pada konsep '{blueprint.knowledge_point}' dalam buku."
-        }
-        parsed_obj = QuestionPackage.model_validate(parsed_dict)
-
-    latency = int((time.time() - t0) * 1000)
-    trace = PromptStageTrace(
-        stage_name="Stage 4: Question Generation",
-        step_number=4,
-        attempt_number=attempt,
-        prompt_sent=prompt_text,
-        raw_response=raw_response,
-        parsed_output=parsed_obj.model_dump(),
-        latency_ms=latency,
-        status=status,
-        error_message=err_msg,
-        has_fallback=(status == "fallback"),
-    )
-    return parsed_obj, trace
-
-
-def run_llm_judge(
+async def run_llm_judge(
     judge_model: Any,
     retrieved_context: str,
     grounding_evidence: str,
@@ -375,62 +342,43 @@ def run_llm_judge(
     expected_answer: str,
     explanation: str,
     target_bloom_level: str,
-    attempt: int = 1
+    attempt: int = 1,
 ) -> tuple[JudgeEvaluationResult, PromptStageTrace]:
-    """Layer 2: Execute LLM-as-Judge Evaluation (Streamlined: Question + Answer + Explanation)."""
-    prompt_text = LLM_JUDGE_PROMPT.format(
-        retrieved_context=retrieved_context[:JUDGE_CONTEXT_CHARS],
-        grounding_evidence=grounding_evidence or "Teks konteks buku",
-        question=question,
-        expected_answer=expected_answer,
-        explanation=explanation or f"Berdasarkan materi '{grounding_evidence}'.",
-        target_bloom_level=target_bloom_level
-    )
+    """Layer 2: LLM-as-Judge evaluation. A failed call counts as a failed evaluation, not a pass."""
 
-    t0 = time.time()
-    raw_response = ""
-    status = "success"
-    err_msg = None
-
-    try:
-        resp = judge_model.invoke([
-            SystemMessage(content=SYSTEM_JUDGE_PERSONA),
-            HumanMessage(content=prompt_text),
-        ])
-        raw_response = resp.content if isinstance(resp.content, str) else str(resp.content)
-        parsed_dict = extract_json_object(raw_response)
-        parsed_obj = JudgeEvaluationResult.model_validate(parsed_dict)
-    except Exception as e:
-        logger.error("[LLM Judge Runner] Error: %s", e)
-        status = "error"
-        err_msg = str(e)
-        parsed_obj = JudgeEvaluationResult(
-            grounding=JudgeAspectResult(status="fail", feedback=f"Evaluasi gagal: {e}"),
+    def fallback() -> JudgeEvaluationResult:
+        failed = JudgeAspectResult(status="fail", feedback="Evaluasi gagal.")
+        return JudgeEvaluationResult(
+            grounding=failed,
             bloom_adherence=JudgeAspectResult(status="fail", detected_level="unknown", feedback="Evaluasi gagal."),
-            bahasa=JudgeAspectResult(status="fail", feedback="Evaluasi gagal."),
-            answerability=JudgeAspectResult(status="fail", feedback="Evaluasi gagal."),
-            answer_alignment=JudgeAspectResult(status="fail", feedback="Evaluasi gagal."),
+            bahasa=failed,
+            answerability=failed,
+            answer_alignment=failed,
             overall="fail",
-            failed_stage="generation"
+            failed_stage="generation",
         )
 
-    latency = int((time.time() - t0) * 1000)
-    trace = PromptStageTrace(
-        stage_name="Layer 2: LLM-as-Judge",
-        step_number=5,
-        attempt_number=attempt,
-        prompt_sent=prompt_text,
-        raw_response=raw_response,
-        parsed_output=parsed_obj.model_dump(),
-        latency_ms=latency,
-        status=status,
-        error_message=err_msg,
-        has_fallback=(status == "fallback"),
+    return await _run_stage(
+        judge_model,
+        SYSTEM_JUDGE_PERSONA,
+        LLM_JUDGE_PROMPT.format(
+            retrieved_context=retrieved_context[:JUDGE_CONTEXT_CHARS],
+            grounding_evidence=grounding_evidence or "Teks konteks buku",
+            question=question,
+            expected_answer=expected_answer,
+            explanation=explanation or f"Berdasarkan materi '{grounding_evidence}'.",
+            target_bloom_level=target_bloom_level,
+        ),
+        JudgeEvaluationResult,
+        "Layer 2: LLM-as-Judge",
+        5,
+        attempt,
+        fallback,
+        error_status="error",
     )
-    return parsed_obj, trace
 
 
-def run_refinement_a(
+async def run_refinement_a(
     chat_model: Any,
     question: str,
     expected_answer: str,
@@ -440,64 +388,39 @@ def run_refinement_a(
     validation_feedback: str,
     target_bloom_level: str,
     question_type: str = "esai",
-    attempt: int = 2
+    attempt: int = 2,
 ) -> tuple[QuestionPackage, PromptStageTrace]:
     """Refinement Prompt A (Generation-level repair, Stage 4 re-entry)."""
-    prompt_text = REFINEMENT_PROMPT_A.format(
-        question=question,
-        expected_answer=expected_answer,
-        explanation=explanation or "Penjelasan sesuai materi.",
-        question_blueprint=json.dumps(blueprint.model_dump(), ensure_ascii=False),
-        retrieved_context=retrieved_context,
-        validation_feedback=validation_feedback,
-        question_type=question_type,
-        target_bloom_level=target_bloom_level
-    )
-
-    t0 = time.time()
-    raw_response = ""
-    status = "success"
-    err_msg = None
-
-    try:
-        resp = chat_model.invoke([
-            SystemMessage(content=SYSTEM_REFINEMENT_PERSONA),
-            HumanMessage(content=prompt_text),
-        ])
-        raw_response = resp.content if isinstance(resp.content, str) else str(resp.content)
-        parsed_dict = extract_json_object(raw_response)
-        parsed_obj = QuestionPackage.model_validate(parsed_dict)
-    except Exception as e:
-        logger.error("[Refinement A Runner] Error: %s", e)
-        status = "fallback"
-        err_msg = str(e)
-        parsed_obj = QuestionPackage(
+    return await _run_stage(
+        chat_model,
+        SYSTEM_REFINEMENT_PERSONA,
+        REFINEMENT_PROMPT_A.format(
+            question=question,
+            expected_answer=expected_answer,
+            explanation=explanation or "Penjelasan sesuai materi.",
+            question_blueprint=json.dumps(blueprint.model_dump(), ensure_ascii=False),
+            retrieved_context=retrieved_context,
+            validation_feedback=validation_feedback,
+            question_type=question_type,
+            target_bloom_level=target_bloom_level,
+        ),
+        QuestionPackage,
+        "Refinement Prompt A (Generation Repair)",
+        6,
+        attempt,
+        lambda: QuestionPackage(
             question=question,
             question_type=question_type,
             cognitive_level=target_bloom_level,
             knowledge_point=blueprint.knowledge_point,
             grounding_evidence=blueprint.grounding_evidence,
             expected_answer=expected_answer,
-            explanation=explanation or "Penjelasan sesuai materi."
-        )
-
-    latency = int((time.time() - t0) * 1000)
-    trace = PromptStageTrace(
-        stage_name="Refinement Prompt A (Generation Repair)",
-        step_number=6,
-        attempt_number=attempt,
-        prompt_sent=prompt_text,
-        raw_response=raw_response,
-        parsed_output=parsed_obj.model_dump(),
-        latency_ms=latency,
-        status=status,
-        error_message=err_msg,
-        has_fallback=(status == "fallback"),
+            explanation=explanation or "Penjelasan sesuai materi.",
+        ),
     )
-    return parsed_obj, trace
 
 
-def run_refinement_b(
+async def run_refinement_b(
     chat_model: Any,
     prev_plan: CognitivePlan,
     question_text: str,
@@ -505,50 +428,23 @@ def run_refinement_b(
     detected_level: str,
     target_bloom_level: str,
     content_analysis: ContentAnalysis,
-    attempt: int = 2
+    attempt: int = 2,
 ) -> tuple[CognitivePlan, PromptStageTrace]:
     """Refinement Prompt B (Planning-level repair, Stage 2-3 re-entry)."""
-    compact_ca_str = _compact_content_analysis(content_analysis)
-
-    prompt_text = REFINEMENT_PROMPT_B.format(
-        cognitive_plan=json.dumps(prev_plan.model_dump(), ensure_ascii=False),
-        question=question_text,
-        validation_feedback=validation_feedback,
-        detected_level=detected_level or "Tidak sesuai",
-        target_bloom_level=target_bloom_level,
-        content_analysis=compact_ca_str
+    return await _run_stage(
+        chat_model,
+        SYSTEM_REFINEMENT_PERSONA,
+        REFINEMENT_PROMPT_B.format(
+            cognitive_plan=json.dumps(prev_plan.model_dump(), ensure_ascii=False),
+            question=question_text,
+            validation_feedback=validation_feedback,
+            detected_level=detected_level or "Tidak sesuai",
+            target_bloom_level=target_bloom_level,
+            content_analysis=_compact_content_analysis(content_analysis),
+        ),
+        CognitivePlan,
+        "Refinement Prompt B (Cognitive Planning Redesign)",
+        6,
+        attempt,
+        lambda: prev_plan,
     )
-
-    t0 = time.time()
-    raw_response = ""
-    status = "success"
-    err_msg = None
-
-    try:
-        resp = chat_model.invoke([
-            SystemMessage(content=SYSTEM_REFINEMENT_PERSONA),
-            HumanMessage(content=prompt_text),
-        ])
-        raw_response = resp.content if isinstance(resp.content, str) else str(resp.content)
-        parsed_dict = extract_json_object(raw_response)
-        parsed_obj = CognitivePlan.model_validate(parsed_dict)
-    except Exception as e:
-        logger.error("[Refinement B Runner] Error: %s", e)
-        status = "fallback"
-        err_msg = str(e)
-        parsed_obj = prev_plan
-
-    latency = int((time.time() - t0) * 1000)
-    trace = PromptStageTrace(
-        stage_name="Refinement Prompt B (Cognitive Planning Redesign)",
-        step_number=6,
-        attempt_number=attempt,
-        prompt_sent=prompt_text,
-        raw_response=raw_response,
-        parsed_output=parsed_obj.model_dump(),
-        latency_ms=latency,
-        status=status,
-        error_message=err_msg,
-        has_fallback=(status == "fallback"),
-    )
-    return parsed_obj, trace

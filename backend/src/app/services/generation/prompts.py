@@ -4,7 +4,8 @@ Includes:
 - System Persona constants (digunakan sebagai SystemMessage terpisah)
 - Stage 1: Context Understanding Prompt
 - Stage 2: Cognitive Bloom Planning Prompt
-- Stage 3: Question Blueprint Prompt
+- Stage 3: Question Blueprint Prompt (single item, used by planning refinement)
+- Stage 3 Batch: Question Blueprints for every question of one chunk
 - Stage 4: Question Generation Prompt (Question + Answer + Explanation)
 - LLM-as-Judge Prompt (Layer 2)
 - Refinement Prompt A (Generation-level repair)
@@ -137,7 +138,7 @@ Tentukan:
 
 Ketentuan:
 1. Pertanyaan harus dapat dijawab sepenuhnya dari CONTEXT, tidak boleh membutuhkan pengetahuan di luar itu.
-2. Untuk C3-C4, wajib sediakan stimulus_context konkret agar siswa tidak sekadar mengutip definisi.
+2. Untuk C3-C4, wajib sediakan stimulus_context konkret agar siswa tidak sekadar mengutip definisi. Skenario boleh fiktif, tetapi fakta yang dipakai dan penalaran yang diminta harus bisa diselesaikan dengan fakta di CONTEXT saja (jangan meminta mekanisme/akibat yang tidak dijelaskan CONTEXT).
 3. grounding_evidence harus dapat ditelusuri kembali ke CONTEXT kata per kata.
 4. question_type mengikuti recommended_question_format pada COGNITIVE PLAN.
 5. Uji konsep/fakta materi, BUKAN pengalaman aktivitas kelas siswa.
@@ -151,6 +152,51 @@ OUTPUT JSON:
   "stimulus_context": "...",
   "expected_answer_summary": "...",
   "answer_scope": "..."
+}}
+"""
+
+STAGE3_BATCH_BLUEPRINT_PROMPT = """Buat rancangan (blueprint) untuk SETIAP butir soal evaluasi SD berbentuk isian/esai di bawah ini sebelum menulis pertanyaan final. Semua butir berasal dari CONTEXT yang sama.
+
+CONTEXT:
+{chunk_text}
+
+COGNITIVE PLAN PER LEVEL:
+{cognitive_plans}
+
+DAFTAR BUTIR (poin materi, kutipan sumber, dan level target):
+{items}
+
+Untuk setiap butir tentukan:
+1. knowledge_point (pokok materi spesifik yang diuji, sesuai poin butir)
+2. question_type (isian_singkat / esai_pendek / esai, mengikuti recommended_question_format level butir)
+3. question_intent (indikator kompetensi yang diukur)
+4. grounding_evidence (WAJIB kutipan kalimat persis dari CONTEXT sebagai bukti materi)
+5. stimulus_context (skenario/cerita singkat kehidupan nyata untuk C3/C4, atau string kosong jika C1/C2)
+6. expected_answer_summary (ringkasan inti jawaban ideal yang diharapkan)
+7. answer_scope (batasan panjang/kedalaman jawaban siswa SD)
+
+Ketentuan:
+1. Pertanyaan harus dapat dijawab sepenuhnya dari CONTEXT, tidak boleh membutuhkan pengetahuan di luar itu.
+2. Untuk C3-C4, wajib sediakan stimulus_context konkret agar siswa tidak sekadar mengutip definisi. Skenario boleh fiktif, tetapi fakta yang dipakai dan penalaran yang diminta harus bisa diselesaikan dengan fakta di CONTEXT saja (jangan meminta mekanisme/akibat yang tidak dijelaskan CONTEXT).
+3. grounding_evidence harus dapat ditelusuri kembali ke CONTEXT kata per kata.
+4. Uji konsep/fakta materi, BUKAN pengalaman aktivitas kelas siswa.
+5. Setiap butir harus menguji aspek yang BERBEDA. Jika dua butir memakai poin yang sama, pilih sudut yang berbeda (misal fungsi, proses, sebab-akibat, atau contoh) agar soalnya tidak kembar.
+6. Kembalikan tepat satu blueprint per butir, urut sesuai nomor butir.
+
+OUTPUT JSON:
+{{
+  "blueprints": [
+    {{
+      "item": 1,
+      "knowledge_point": "...",
+      "question_type": "...",
+      "question_intent": "...",
+      "grounding_evidence": "...",
+      "stimulus_context": "...",
+      "expected_answer_summary": "...",
+      "answer_scope": "..."
+    }}
+  ]
 }}
 """
 
@@ -173,12 +219,17 @@ Ketentuan Khusus Penulisan Soal SD:
    - Untuk C3/C4: Sertakan narasi/stimulus situasi sehari-hari yang ramah anak sebelum mengajukan pertanyaan analitis.
 2. Gaya Bahasa: Gunakan Bahasa Indonesia yang sederhana, komunikatif, bersahabat, kalimat pendek, dan tidak ambigu bagi siswa SD. Sapa siswa dengan "kamu", bukan "Anda".
 3. Hindari Kata Larangan: Jangan sebut kata 'Bloom', 'C1-C4', 'Bab', atau 'Halaman' di dalam teks soal.
-4. Faktual & Anti-Halusinasi: Semua fakta sains, mekanisme, organ, atau konsep dalam `question` dan `expected_answer` HARUS 100% bersumber dari CONTEXT dan `grounding_evidence`. DILARANG menambahkan fakta ilmiah atau konsep di luar materi yang diberikan.
-5. Jawaban Ideal (expected_answer): Harus 100% didukung fakta materi CONTEXT, dirumuskan dengan kalimat utuh, komunikatif, dan runtut sebagai standar kunci jawaban guru.
-6. Penjelasan (explanation): Berikan penjelasan ringkas dan edukatif mengapa jawaban tersebut benar berdasarkan konsep materi buku.
-7. Soal Mandiri & Jelas: Soal harus bisa dipahami oleh siswa yang membacanya tanpa mengikuti pelajaran di kelas. Sebut langsung nama konsep/objek/peristiwanya. DILARANG merujuk pengalaman kelas seperti "yang telah kamu pelajari", "yang sudah kalian lakukan", "di kelas", "di sekolahmu", atau "aktivitas tadi".
-8. Satu Pertanyaan: Tulis tepat SATU pertanyaan per butir. Jangan menambahkan pertanyaan kedua (contoh salah: "Jelaskan cara bermainnya. Apa tujuannya?").
-9. Akhiri pertanyaan dengan tanda tanya (?), atau dengan titik (.) jika berupa kalimat perintah seperti "Jelaskan ..." / "Sebutkan ...".
+4. Faktual & Anti-Halusinasi: Semua fakta sains, mekanisme, organ, angka, atau konsep dalam `question`, `expected_answer`, dan `explanation` HARUS 100% bersumber dari CONTEXT dan `grounding_evidence`. DILARANG menambahkan fakta ilmiah atau konsep di luar materi yang diberikan, walaupun fakta itu benar menurut pengetahuan umum.
+5. Aturan Khusus C3/C4 — Skenario Boleh Fiktif, Fakta Tidak:
+   - Tokoh, tempat, dan kejadian dalam skenario boleh rekaan (misal "Bayangkan kamu berada di ...").
+   - Tetapi setiap FAKTA yang dipakai di skenario, pertanyaan, jawaban, dan penjelasan (sifat benda, angka, sebab-akibat, mekanisme) harus tertulis di CONTEXT.
+   - Penalaran siswa hanya boleh menggabungkan, membandingkan, atau menerapkan fakta CONTEXT. Jangan meminta siswa menjelaskan mekanisme atau akibat yang tidak dijelaskan CONTEXT (contoh salah: CONTEXT hanya memuat data periode revolusi, lalu soal meminta menjelaskan pengaruhnya pada musim).
+   - Jika CONTEXT hanya berisi data/fakta tanpa penjelasan sebab-akibat, buat soal perbandingan atau penerapan data tersebut.
+6. Jawaban Ideal (expected_answer): Harus 100% didukung fakta materi CONTEXT, dirumuskan dengan kalimat utuh, komunikatif, dan runtut sebagai standar kunci jawaban guru. Jangan menambah fakta pelengkap dari luar CONTEXT.
+7. Penjelasan (explanation): Berikan penjelasan ringkas dan edukatif mengapa jawaban tersebut benar, hanya dengan merujuk fakta di CONTEXT.
+8. Soal Mandiri & Jelas: Soal harus bisa dipahami oleh siswa yang membacanya tanpa mengikuti pelajaran di kelas. Sebut langsung nama konsep/objek/peristiwanya. DILARANG merujuk pengalaman kelas seperti "yang telah kamu pelajari", "yang sudah kalian lakukan", "di kelas", "di sekolahmu", atau "aktivitas tadi".
+9. Satu Pertanyaan: Tulis tepat SATU pertanyaan per butir. Jangan menambahkan pertanyaan kedua (contoh salah: "Jelaskan cara bermainnya. Apa tujuannya?").
+10. Akhiri pertanyaan dengan tanda tanya (?), atau dengan titik (.) jika berupa kalimat perintah seperti "Jelaskan ..." / "Sebutkan ...".
 
 OUTPUT JSON:
 {{
@@ -213,14 +264,19 @@ TARGET BLOOM:
 {target_bloom_level}
 
 Evaluasi 5 aspek kualitas:
-1. grounding — apakah fakta pada question & expected_answer 100% didukung CONTEXT (tidak ada halusinasi fakta)?
+1. grounding — periksa SETIAP klaim fakta (sifat benda, angka, sebab-akibat, mekanisme, contoh) di question, expected_answer, DAN explanation satu per satu terhadap CONTEXT.
+   - Tokoh/tempat/kejadian rekaan dalam skenario C3/C4 boleh, asalkan fakta yang dipakai ada di CONTEXT.
+   - "fail" jika ada SATU saja klaim fakta yang tidak tertulis di CONTEXT, walaupun benar menurut pengetahuan umum, atau jika jawaban menarik kesimpulan sebab-akibat yang tidak dinyatakan CONTEXT.
+   - Pada feedback, sebutkan klaim yang tidak didukung CONTEXT secara persis.
 2. bloom_adherence — evaluasi level kognitif yang SEBENARNYA dituntut soal ini (deteksi ulang secara independen). Apakah cocok dengan TARGET BLOOM? (Catatan: C3/C4 untuk SD membutuhkan skenario/analisis sebab-akibat, bukan hafalan definisi).
 3. bahasa — apakah bahasa jelas, komunikatif, ramah anak usia SD (6-12 tahun), berisi SATU pertanyaan, dan mandiri (tidak merujuk "yang telah kamu pelajari/lakukan di kelas")?
-4. answerability — apakah soal dapat dijawab tuntas hanya dengan membaca CONTEXT yang ada?
-5. answer_alignment — apakah expected_answer & explanation menjawab question secara tepat, runtut, dan edukatif?
+4. answerability — apakah soal dapat dijawab tuntas hanya dengan membaca CONTEXT yang ada? "fail" jika siswa membutuhkan pengetahuan di luar CONTEXT untuk menjawab.
+5. answer_alignment — apakah expected_answer & explanation menjawab question secara tepat, runtut, konsisten (tidak saling bertentangan), dan edukatif?
+
+"overall" adalah "pass" HANYA jika kelima aspek "pass"; satu aspek "fail" berarti "overall" = "fail".
 
 Tentukan "failed_stage":
-- "generation" jika masalah ada pada redaksi bahasa, format jawaban, atau kejelasan teks
+- "generation" jika masalah ada pada fakta di luar CONTEXT, redaksi bahasa, format jawaban, atau kejelasan teks
 - "planning" jika level kognitif tidak sesuai target (misal C4 tetapi soalnya hanya hafalan C1)
 - "none" jika seluruh aspek lolos (pass)
 
@@ -257,7 +313,7 @@ FEEDBACK VALIDATOR:
 {validation_feedback}
 
 Ketentuan:
-1. Jika grounding gagal -> ganti bagian yang tidak didukung CONTEXT, gunakan ulang grounding_evidence dari blueprint.
+1. Jika grounding/answerability gagal -> hapus atau ganti setiap klaim fakta yang tidak tertulis di CONTEXT (di question, expected_answer, dan explanation), gunakan ulang grounding_evidence dari blueprint. Untuk C3/C4 skenario boleh tetap fiktif, tetapi pertanyaannya harus bisa dijawab hanya dengan fakta CONTEXT; jika perlu ubah pertanyaan menjadi perbandingan/penerapan fakta CONTEXT.
 2. Jika bahasa/ambiguity gagal -> sederhanakan kalimat, hilangkan makna ganda.
 3. Jika answer_alignment gagal -> sesuaikan expected_answer dan explanation agar konsisten dengan question.
 4. Jangan menambahkan informasi dari luar CONTEXT.

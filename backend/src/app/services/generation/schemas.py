@@ -52,6 +52,17 @@ class QuestionBlueprint(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+class BatchBlueprint(QuestionBlueprint):
+    item: int | None = Field(default=None, description="Nomor butir (1-based) yang dirancang blueprint ini")
+
+
+class BlueprintBatch(BaseModel):
+    """Output of Stage 3 Batch — one blueprint per question of a chunk."""
+    blueprints: list[BatchBlueprint] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class AnswerElement(BaseModel):
     element: str = Field(description="Elemen kunci atau poin jawaban")
     weight: int | float = Field(default=1, description="Bobot penilaian elemen ini")

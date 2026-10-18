@@ -14,6 +14,7 @@ from app.api.v1 import chat, questions
 from app.core.database import Base
 from app.main import app
 from app.models.db_models import ChatSession, Document, Question
+from app.services.generation import runner
 
 client = TestClient(app)
 
@@ -33,6 +34,7 @@ def db_factory(monkeypatch):
             db.close()
 
     monkeypatch.setattr(chat, "get_session", fake_get_session)
+    monkeypatch.setattr(runner, "get_session", fake_get_session)
     monkeypatch.setattr(questions, "get_session", fake_get_session)
     return fake_get_session
 
@@ -82,7 +84,7 @@ def test_generation_status_lifecycle(db_factory, monkeypatch):
         async def ainvoke(self, state, config=None):
             return {"finalized_questions": [{"question": "Q?", "answer": "A", "status": "final"}]}
 
-    monkeypatch.setattr(chat, "get_aqg_graph", lambda: FakeGraph())
+    monkeypatch.setattr(runner, "get_aqg_graph", lambda: FakeGraph())
     asyncio.run(real_generate(*deferred[0]))
     assert client.get(f"/api/v1/chat/sessions/{session_id}").json()["generation_status"] == "done"
 
@@ -90,7 +92,7 @@ def test_generation_status_lifecycle(db_factory, monkeypatch):
         async def ainvoke(self, state, config=None):
             return {"finalized_questions": [], "error": "kosong"}
 
-    monkeypatch.setattr(chat, "get_aqg_graph", lambda: EmptyGraph())
+    monkeypatch.setattr(runner, "get_aqg_graph", lambda: EmptyGraph())
     asyncio.run(real_generate(*deferred[0]))
     listed = client.get("/api/v1/chat/sessions").json()
     assert listed[0]["generation_status"] == "failed"

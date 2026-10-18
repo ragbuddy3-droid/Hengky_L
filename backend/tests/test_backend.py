@@ -39,7 +39,7 @@ def test_settings_pure_yaml():
 def test_deepinfra_chat_model_initialization():
     """Verify get_chat_model initializes ChatOpenAI with DeepInfra and JSON structured output."""
     from app.core.config import get_settings
-    from app.graph.nodes import get_chat_model
+    from app.services.llm import get_chat_model
 
     settings = get_settings()
 

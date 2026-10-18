@@ -12,9 +12,10 @@ from app.api.v1.router import router
 from app.core.config import get_settings
 from app.core.database import get_session, init_db
 from app.core.logging_config import setup_logging
-from app.graph.nodes import get_chat_model, get_shared_dense_index
 from app.graph.workflow import get_aqg_graph
 from app.services.chat.session_store import fail_interrupted_generations
+from app.services.llm import get_chat_model
+from app.services.retrieval.retriever import get_shared_dense_index
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +43,8 @@ async def lifespan(app: FastAPI):
     logger.info("   Judge model     : %s", settings.LLM_JUDGE_MODEL)
     logger.info("   Embedding model : %s", settings.EMBEDDING_MODEL)
     logger.info("   LLM Provider    : %s", settings.LLM_PROVIDER)
-    logger.info("   Grounding thr.  : %s", settings.GROUNDING_THRESHOLD)
-    logger.info("   Auto-pass thr.  : %s", settings.GROUNDING_AUTO_PASS_THRESHOLD)
+    logger.info("   Fast-reject thr.: %s", settings.FAST_REJECT_THRESHOLD)
+    logger.info("   Max soal/chunk  : %s", settings.MAX_QUESTIONS_PER_CHUNK)
     logger.info("   Max refinement  : %s", settings.MAX_REFINEMENT_ATTEMPTS)
     logger.info("   Database URL    : %s", settings.DATABASE_URL)
     logger.info("   CORS Origins    : %s", settings.CORS_ORIGINS)

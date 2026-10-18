@@ -80,14 +80,20 @@ class DenseIndex:
         self,
         query_text: str,
         top_k: int = 5,
-        document_id: str | None = None
+        document_id: str | None = None,
+        chapters: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Query ChromaDB vector store with optional document_id filter and return ranked chunks."""
+        """Query ChromaDB with optional document_id / chapter filters and return ranked chunks."""
         if not query_text or not query_text.strip() or self.collection.count() == 0:
             return []
 
         query_emb = self._model.encode([query_text], normalize_embeddings=True).tolist()
-        where_clause = {"document_id": document_id} if document_id else None
+        filters: list[dict[str, Any]] = []
+        if document_id:
+            filters.append({"document_id": document_id})
+        if chapters:
+            filters.append({"chapter": {"$in": chapters}})
+        where_clause: Any = filters[0] if len(filters) == 1 else ({"$and": filters} if filters else None)
 
         results = self.collection.query(
             query_embeddings=query_emb,

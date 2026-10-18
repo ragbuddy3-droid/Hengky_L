@@ -140,26 +140,26 @@ def test_api_question_detail_multi_stage_schema():
 
 def test_generation_intent_detection():
     """Verify natural language question generation intent detection."""
-    from app.api.v1.chat import _parse_generation_params, is_generation_intent
+    from app.services.chat.intent import is_generation_intent, parse_generation_params
 
     # Variations of user generation requests
     req1 = "Buatkan 3 soal esai C2 Bab 3 Jejak Sang Pahlawan, Daerahku di Masa Penjajahan"
     assert is_generation_intent(req1) is True
-    p1 = _parse_generation_params(req1)
+    p1 = parse_generation_params(req1)
     assert p1.num_questions == 3
     assert p1.bloom_level == "C2-Memahami"
     assert p1.chapter == "3"
 
     req2 = "Tolong buatkan 5 soal C4 bab 2"
     assert is_generation_intent(req2) is True
-    p2 = _parse_generation_params(req2)
+    p2 = parse_generation_params(req2)
     assert p2.num_questions == 5
     assert p2.bloom_level == "C4-Menganalisis"
     assert p2.chapter == "2"
 
     req3 = "Bikin 2 pertanyaan isian singkat materi hidung"
     assert is_generation_intent(req3) is True
-    p3 = _parse_generation_params(req3)
+    p3 = parse_generation_params(req3)
     assert p3.num_questions == 2
 
     # Conversational messages

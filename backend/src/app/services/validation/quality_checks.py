@@ -24,6 +24,51 @@ VAGUE_REFERENCE_PATTERNS = [
     r"\byang\s+(?:kamu|kalian)\s+(?:mainkan|pelajari)\b",
 ]
 
+# Reflective / meta-learning questions ask about the lesson itself, not the book content
+REFLECTIVE_PATTERNS = [
+    r"setelah mempelajari bab ini",
+    r"tujuan pembelajaran",
+    r"apa yang (?:sudah|telah) (?:kamu|kalian) pelajari",
+    r"apa yang dapat kamu (?:lakukan|capai|raih)",
+    r"apa yang perlu kamu lakukan untuk (?:mengetahui|memahami)",
+    r"apa yang (?:kamu|kalian) (?:ketahui|pahami) tentang bab",
+    r"apa manfaat mempelajari",
+    r"mengapa kita perlu belajar",
+    r"apa yang bisa kamu pelajari",
+    r"apa yang ingin kamu ketahui",
+]
+
+
+def tokens(text: str) -> set[str]:
+    return set(re.findall(r"\w+", text.lower()))
+
+
+def jaccard(a: set[str], b: set[str]) -> float:
+    union = a | b
+    return len(a & b) / len(union) if union else 0.0
+
+
+def is_reflective_question(question_text: str) -> bool:
+    """Check if the question matches reflective / meta-learning patterns."""
+    text_lower = question_text.lower().strip()
+    return any(re.search(pattern, text_lower) for pattern in REFLECTIVE_PATTERNS)
+
+
+def deduplicate_questions(
+    questions: list[dict[str, Any]],
+    threshold: float = 0.70,
+    existing: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Drop questions whose token overlap with an earlier (or already accepted `existing`) one reaches `threshold`."""
+    seen = [tokens(e.get("question", "")) for e in (existing or [])]
+    unique: list[dict[str, Any]] = []
+    for cand in questions:
+        c_tokens = tokens(cand.get("question", ""))
+        if not any(jaccard(c_tokens, s) >= threshold for s in seen):
+            unique.append(cand)
+            seen.append(c_tokens)
+    return unique
+
 
 def _last_sentence(text: str) -> str:
     parts = [p.strip() for p in re.split(r"[.?!]+", text) if p.strip()]

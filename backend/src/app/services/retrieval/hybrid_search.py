@@ -132,12 +132,13 @@ class HybridSearch:
         document_id: str | None = None,
         candidate_k: int = 15,
         enable_rerank: bool = True,
+        chapters: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Run dense and sparse queries with doc-id filter, fuse with RRF, and re-rank with semantic cross-scoring."""
+        """Run dense and sparse queries with doc-id/chapter filter, fuse with RRF, and re-rank with semantic cross-scoring."""
         fetch_k = max(top_k * 3, candidate_k)
 
         with ThreadPoolExecutor(max_workers=2) as executor:
-            dense_future = executor.submit(self.dense_index.query, query, fetch_k, document_id)
+            dense_future = executor.submit(self.dense_index.query, query, fetch_k, document_id, chapters)
             sparse_future = executor.submit(self.sparse_index.query, query, fetch_k)
             dense_results = dense_future.result()
             sparse_results = sparse_future.result()

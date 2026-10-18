@@ -55,9 +55,24 @@ class Chunk(Base):
     created_at = Column(DateTime, default=utcnow)
 
     document = relationship("Document", back_populates="chunks")
+    analysis = relationship("ChunkAnalysis", back_populates="chunk", cascade="all, delete-orphan", uselist=False)
 
     def __repr__(self) -> str:
         return f"<Chunk(id={self.id}, document_id={self.document_id})>"
+
+
+class ChunkAnalysis(Base):
+    """Cached Stage 1 (Context Understanding) result of a chunk, reused across generation requests."""
+
+    __tablename__ = "chunk_analyses"
+
+    chunk_id = Column(String, ForeignKey("chunks.id", ondelete="CASCADE"), primary_key=True)
+    prompt_key = Column(String, nullable=False)  # hash of the Stage 1 prompt + model; a change invalidates the cache
+    analysis = Column(Text, nullable=False)  # JSON ContentAnalysis
+    trace = Column(Text, nullable=False)  # JSON PromptStageTrace of the call that produced it
+    created_at = Column(DateTime, default=utcnow)
+
+    chunk = relationship("Chunk", back_populates="analysis")
 
 
 class ChatSession(Base):

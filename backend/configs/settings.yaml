@@ -20,7 +20,6 @@ llm:
 
 validation:
   fast_reject_threshold: 0.40
-  grounding_threshold: 0.50
   max_refinement_attempts: 3
 
 database:
@@ -33,10 +32,13 @@ retrieval:
   hybrid_dense_weight: 0.6
   hybrid_sparse_weight: 0.4
   reranker_enabled: false
+  max_questions_per_chunk: 3  # kapasitas maksimum soal dari 1 chunk
+  min_relative_score: 0.5     # buang kandidat < 50% skor relevansi teratas
+  reserve_chunks: 3           # chunk cadangan untuk ekspansi kapasitas & top-up
 
 generation:
   concurrency: 8
-  max_context_chunks: 10
+  max_context_chunks: 10  # batas atas jumlah chunk per permintaan
 
 chunking:
   strategy: "fixed"

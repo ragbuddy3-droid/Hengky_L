@@ -1,33 +1,40 @@
-"""LangGraph Node implementations for Multi-Stage RAG-AQG generation, 2-layer validation, and persistence.
+"""LangGraph node implementations for Multi-Stage RAG-AQG generation, 2-layer validation, and persistence.
 
 Session-level nodes (AQGState): retrieve_context -> generate_questions -> [fan-out] validate_question
 -> review_results -> (top_up_questions -> [fan-out] validate_question ->) persist_questions.
 
 Per-question nodes (QuestionState, run inside the validation subgraph for each candidate in parallel):
 grounding_validation -> llm_judge_evaluation <-> self_refinement -> finalize_question.
+
+The nodes only orchestrate; retrieval, planning, prompting, and persistence live in app.services.
 """
 
 import asyncio
 import functools
-import hashlib
 import inspect
 import json
 import logging
-import math
-import random
-import re
 import time
-import uuid
-from collections import defaultdict
-from typing import Any
-
-from langchain_openai import ChatOpenAI
+from collections.abc import Awaitable
+from typing import Any, TypeVar
 
 from app.core.config import get_settings
-from app.core.database import get_session
 from app.graph.state import AQGState, QuestionState
-from app.models.db_models import ChatSession, Chunk, Question, ValidationLog
-from app.services.chat.state_manager import ChatStateManager
+from app.services.generation.analysis_cache import load_cached_analyses, store_analyses
+from app.services.generation.planner import (
+    NO_FEW_SHOT,
+    allocate_items,
+    assign_bloom_levels,
+    bloom_order,
+    candidate_count,
+    chunk_point_lists,
+    focus_context,
+    interleave,
+    load_few_shots,
+    planning_summary,
+    real_capacity,
+    source_reference,
+)
 from app.services.generation.schemas import (
     CognitivePlan,
     ContentAnalysis,
@@ -39,101 +46,32 @@ from app.services.generation.stage_runners import (
     run_refinement_b,
     run_stage1_context_understanding,
     run_stage2_cognitive_planning,
+    run_stage3_blueprint_batch,
     run_stage3_question_blueprint,
     run_stage4_question_generation,
 )
-from app.services.retrieval.dense_index import DenseIndex
-from app.services.retrieval.hybrid_search import HybridSearch, is_exercise_or_instruction_chunk
-from app.services.retrieval.sparse_index import SparseIndex
+from app.services.llm import get_chat_model
+from app.services.questions.repository import save_questions
+from app.services.retrieval.capacity import select_by_capacity
+from app.services.retrieval.retriever import (
+    get_shared_dense_index,
+    load_document_chunks,
+    retrieve_chunks,
+)
 from app.services.validation.grounding_checker import compute_grounding_evidence_score
 from app.services.validation.quality_checks import (
+    deduplicate_questions,
     find_clarity_issue,
-    has_valid_question_ending,
-    validate_answer_quality,
+    is_reflective_question,
 )
 
 logger = logging.getLogger(__name__)
 
-# Chunk categories that carry book content (activity/discussion chunks produce "what did you do in class" questions)
-_PREFERRED_CHUNK_CATEGORIES = {"materi_pokok", "uraian_materi", "studi_kasus"}
-_MIN_CHUNK_CHARS = 200
+_DEDUP_THRESHOLD = 0.70
+_EXPANSION_ROUNDS = 2  # times Node 2 may pull reserve chunks when Stage 1 finds too few points
+_JUDGE_ASPECTS = ["grounding", "bloom_adherence", "bahasa", "answerability", "answer_alignment"]
 
-# Used round-robin when the user does not ask for a specific level
-MIXED_BLOOM_LEVELS = ["C1-Mengingat", "C2-Memahami", "C3-Mengaplikasikan", "C4-Menganalisis"]
-
-# Supporting context appended after the focus chunk (generation, judge, and refinement all share it)
-_SUPPORT_CONTEXT_CHARS = 2500
-
-# Fast-fail reflective question regex patterns
-REFLECTIVE_PATTERNS = [
-    r"setelah mempelajari bab ini",
-    r"tujuan pembelajaran",
-    r"apa yang (?:sudah|telah) (?:kamu|kalian) pelajari",
-    r"apa yang dapat kamu (?:lakukan|capai|raih)",
-    r"apa yang perlu kamu lakukan untuk (?:mengetahui|memahami)",
-    r"apa yang (?:kamu|kalian) (?:ketahui|pahami) tentang bab",
-    r"apa manfaat mempelajari",
-    r"mengapa kita perlu belajar",
-    r"apa yang bisa kamu pelajari",
-    r"apa yang ingin kamu ketahui",
-]
-
-# ── Global Service Singletons ──
-_dense_index: DenseIndex | None = None
-_sparse_cache: dict[str, SparseIndex] = {}
-_chat_model_cache: dict[tuple[str, float], ChatOpenAI] = {}
-
-
-def get_shared_dense_index() -> DenseIndex:
-    """Get or create singleton DenseIndex."""
-    global _dense_index
-    if _dense_index is None:
-        settings = get_settings()
-        _dense_index = DenseIndex(
-            persist_dir=settings.CHROMA_PERSIST_DIR,
-            collection_name="rag_aqg_chunks",
-            embedding_model_name=settings.EMBEDDING_MODEL,
-        )
-    return _dense_index
-
-
-def get_chat_model(is_judge: bool = False, temperature: float | None = None) -> ChatOpenAI:
-    """Get or create cached LangChain ChatModel with DeepInfra OpenAI-compatible API and structured JSON output."""
-    settings = get_settings()
-    model_name = settings.LLM_JUDGE_MODEL if is_judge else settings.LLM_GENERATOR_MODEL
-    default_temp = 0.05 if is_judge else 0.3
-    temp = temperature if temperature is not None else default_temp
-
-    cache_key = (model_name, temp)
-    if cache_key in _chat_model_cache:
-        return _chat_model_cache[cache_key]
-
-    api_key = settings.DEEPINFRA_API_KEY
-    if not api_key:
-        logger.warning(
-            "DEEPINFRA_API_KEY is not configured in .env. LLM calls will require a valid DeepInfra token."
-        )
-
-    base_url = settings.DEEPINFRA_BASE_URL or "https://api.deepinfra.com/v1/openai"
-
-    client = ChatOpenAI(
-        model=model_name,
-        api_key=api_key or "sk-dummy-key",
-        base_url=base_url,
-        temperature=temp,
-        max_tokens=settings.MAX_TOKENS,
-        timeout=settings.LLM_REQUEST_TIMEOUT,
-        max_retries=settings.LLM_MAX_RETRIES,
-        model_kwargs={
-            "response_format": {"type": "json_object"},
-        },
-        default_headers={
-            "HTTP-Referer": "http://localhost:3000",
-            "X-Title": "RAG-AQG",
-        },
-    )
-    _chat_model_cache[cache_key] = client
-    return client
+R = TypeVar("R")
 
 
 def _timed(node_name: str):
@@ -160,523 +98,239 @@ def _timed(node_name: str):
     return decorator
 
 
-# ── Text Cleaning & Filtering Helpers ──
+async def _gather_limited(coros: list[Awaitable[R]]) -> list[R]:
+    """asyncio.gather with at most GENERATION_CONCURRENCY LLM calls in flight."""
+    semaphore = asyncio.Semaphore(get_settings().GENERATION_CONCURRENCY)
 
-def extract_chapter_number(chapter_str: str | None) -> str | None:
-    """Extract chapter number or roman numeral into normalized integer string."""
-    if not chapter_str:
-        return None
-    match = re.search(
-        r'\b(?:Bab|Chapter|Unit|Pembelajaran|Modul)?\s*([\d]+|[IVXLCDM]+)\b',
-        str(chapter_str),
-        re.IGNORECASE,
-    )
-    if match:
-        val = match.group(1).upper()
-        roman_map = {
-            'I': '1', 'II': '2', 'III': '3', 'IV': '4', 'V': '5',
-            'VI': '6', 'VII': '7', 'VIII': '8', 'IX': '9', 'X': '10',
+    async def _run(coro: Awaitable[R]) -> R:
+        async with semaphore:
+            return await coro
+
+    return list(await asyncio.gather(*[_run(c) for c in coros]))
+
+
+def _count_final(questions: list[dict[str, Any]]) -> int:
+    return sum(1 for q in questions if q.get("status") == "final")
+
+
+# ── Shared Stage 1/2 cache ──
+
+def _analyses(stage_cache: dict[str, Any]) -> dict[str, ContentAnalysis]:
+    return {cid: ContentAnalysis.model_validate(v["analysis"]) for cid, v in stage_cache.get("analyses", {}).items()}
+
+
+def _copy_cache(stage_cache: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "analyses": dict(stage_cache.get("analyses", {})),
+        "plans": dict(stage_cache.get("plans", {})),
+        "few_shots": dict(stage_cache.get("few_shots", {})),
+    }
+
+
+async def _ensure_analyses(chunks: list[dict[str, Any]], stage_cache: dict[str, Any]) -> dict[str, Any]:
+    """Stage 1 for chunks not in the cache yet: reuse the persistent per-chunk cache, call the LLM for the rest.
+
+    Stage 1 runs once per chunk so every knowledge point keeps its source chunk. Returns a new cache.
+    """
+    cache = _copy_cache(stage_cache)
+    missing = [c for c in chunks if c["id"] not in cache["analyses"]]
+    if not missing:
+        return cache
+
+    stored = await asyncio.to_thread(load_cached_analyses, [c["id"] for c in missing])
+    cache["analyses"].update(stored)
+    to_run = [c for c in missing if c["id"] not in stored]
+    if to_run:
+        analysis_model = get_chat_model(is_judge=False, temperature=0.1)
+        stage1 = await _gather_limited([
+            run_stage1_context_understanding(analysis_model, c.get("text", ""), 1) for c in to_run
+        ])
+        fresh = {
+            chk["id"]: {"analysis": ca.model_dump(), "trace": trace.model_dump()}
+            for chk, (ca, trace) in zip(to_run, stage1, strict=True)
         }
-        return roman_map.get(val, val)
-    return None
+        cache["analyses"].update(fresh)
+        await asyncio.to_thread(store_analyses, fresh)
+    logger.info("[Stage 1] %d chunks: %d from cache, %d analysed.", len(missing), len(stored), len(to_run))
+    return cache
 
 
-def sanitize_retrieval_query(user_prompt: str) -> str:
-    """Clean user prompt from generation meta-words to extract pure topical keywords."""
-    if not user_prompt:
-        return ""
-    text = user_prompt.lower()
-    text = re.sub(r'\b\d+\s*(?:soal|pertanyaan)\b', '', text, flags=re.IGNORECASE)
-    stop_meta = [
-        r'\bbuatkan\b', r'\bbuat\b', r'\bbikin\b', r'\bgenerate\b', r'\bberikan\b', r'\bminta\b', r'\btolong\b',
-        r'\bsoal\b', r'\bpertanyaan\b', r'\blatihan\b', r'\btugas\b', r'\bujicoba\b',
-        r'\bc[1-6]\b', r'\besai\b', r'\bisian\s*singkat\b', r'\bisian\b', r'\bpilihan\s*ganda\b',
-        r'\bdong\b', r'\bya\b', r'\bsebanyak\b', r'\bjumlah\b',
-        # Chapter is handled separately; filler words carry no topic
-        r'\bbab\s*[\w]+', r'\btentang\b', r'\bmengenai\b', r'\bmateri\b', r'\blevel\b', r'\btingkat\b',
-        r'\bberagam\b', r'\bcampur\b', r'\bdari\b', r'\buntuk\b', r'\bdengan\b',
-    ]
-    for pattern in stop_meta:
-        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
-    text = re.sub(r'[^\w\s-]', ' ', text)
-    return re.sub(r'\s+', ' ', text).strip()
+async def _ensure_plans(document_id: str, levels: list[str], stage_cache: dict[str, Any]) -> dict[str, Any]:
+    """Stage 2 (+ few-shot examples) for Bloom levels not planned yet, from a topic/concept summary only."""
+    cache = _copy_cache(stage_cache)
+    new_levels = [lvl for lvl in dict.fromkeys(levels) if lvl not in cache["plans"]]
+    if not new_levels:
+        return cache
+
+    planning_model = get_chat_model(is_judge=False, temperature=0.2)
+    summary = planning_summary(list(_analyses(cache).values()))
+    stage2 = await _gather_limited([
+        run_stage2_cognitive_planning(planning_model, summary, lvl, 1) for lvl in new_levels
+    ])
+    for lvl, (plan, trace) in zip(new_levels, stage2, strict=True):
+        cache["plans"][lvl] = {"plan": plan.model_dump(), "trace": trace.model_dump()}
+    cache["few_shots"].update(await asyncio.to_thread(load_few_shots, document_id, new_levels))
+    return cache
 
 
-def is_reflective_question(question_text: str) -> bool:
-    """Check if question matches reflective / meta-learning patterns."""
-    text_lower = question_text.lower().strip()
-    return any(re.search(pattern, text_lower) for pattern in REFLECTIVE_PATTERNS)
-
-
-def _tokens(text: str) -> set[str]:
-    return set(re.findall(r'\w+', text.lower()))
-
-
-def _jaccard(a: set[str], b: set[str]) -> float:
-    union = a | b
-    return len(a & b) / len(union) if union else 0.0
-
-
-def deduplicate_questions(
-    questions: list[dict[str, Any]],
-    threshold: float = 0.70,
-    existing: list[dict[str, Any]] | None = None,
-) -> list[dict[str, Any]]:
-    """Deduplicate questions using Jaccard token overlap (also against already accepted `existing` ones)."""
-    seen = [_tokens(e.get("question", "")) for e in (existing or [])]
-    unique: list[dict[str, Any]] = []
-    for cand in questions:
-        c_tokens = _tokens(cand.get("question", ""))
-        if not any(_jaccard(c_tokens, s) >= threshold for s in seen):
-            unique.append(cand)
-            seen.append(c_tokens)
-    return unique
-
-
-def deterministic_pre_pass_check(q: dict[str, Any], target_bloom: str) -> tuple[bool, str]:
-    """Lightweight deterministic check before allowing auto-pass to skip LLM Judge."""
-    q_text = q.get("question", "").strip()
-    ans_text = q.get("answer", "").strip()
-
-    if len(q_text) < 15:
-        return False, "Pertanyaan terlalu pendek untuk evaluasi SD (< 15 karakter)."
-    if len(ans_text) < 5:
-        return False, "Jawaban terlalu singkat (< 5 karakter)."
-    if not has_valid_question_ending(q_text):
-        return False, "Pertanyaan tidak diakhiri tanda baca tanya atau seru."
-
-    # C3-C4 should not be trivial 1-word recognition
-    if any(b in target_bloom for b in ["C3", "C4"]) and len(ans_text.split()) < 3 and not any(
-        w in q_text.lower()
-        for w in ["mengapa", "bagaimana", "jelaskan", "analisis", "faktor", "sebab", "akibat", "apa yang terjadi"]
-    ):
-        return False, "Target C3/C4 membutuhkan pertanyaan analitis/aplikatif, bukan definisi satu kata."
-
-    # General quality heuristics check
-    quality_issues = validate_answer_quality(q)
-    if quality_issues:
-        return False, "; ".join(quality_issues)
-
-    return True, "Validasi deterministik lolos."
-
-
-def normalize_bloom_level(level: str | None) -> str | None:
-    """Map a requested level to the SD range C1-C4; None means 'mixed levels'."""
-    if not level:
-        return None
-    for full in MIXED_BLOOM_LEVELS:
-        if full[:2] in level.upper():
-            return full
-    return "C2-Memahami"  # C5/C6 are out of scope for SD
-
-
-def assign_bloom_levels(count: int, requested: str | None) -> list[str]:
-    """Fixed level when requested, otherwise round-robin C1-C4 (10 -> 3/3/2/2)."""
-    fixed = normalize_bloom_level(requested)
-    if fixed:
-        return [fixed] * count
-    return [MIXED_BLOOM_LEVELS[i % len(MIXED_BLOOM_LEVELS)] for i in range(count)]
-
-
-def select_diverse_chunks(
+async def _generate_candidates(
     chunks: list[dict[str, Any]],
-    k: int,
-    rng: random.Random | None = None,
+    items: list[dict[str, Any]],
+    stage_cache: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Pick up to k content chunks spread over different sections (used when the request has no topic)."""
-    rng = rng or random.Random()
-    usable = [
-        c for c in chunks
-        if len(c.get("text", "")) >= _MIN_CHUNK_CHARS and not is_exercise_or_instruction_chunk(c.get("text", ""))
-    ] or chunks
-    preferred = [c for c in usable if c["metadata"].get("category") in _PREFERRED_CHUNK_CATEGORIES]
-    pool = preferred if len(preferred) >= k else usable
+    """Stage 3 once per chunk (blueprints for all its questions), then Stage 4 per question.
 
-    by_section: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
-    for c in pool:
-        meta = c["metadata"]
-        by_section[(meta.get("chapter", ""), meta.get("section_heading", ""))].append(c)
+    Every call sees only the question's own chunk; that text is stored as the candidate's context so the
+    judge and refinement evaluate against exactly the same material.
+    """
+    chunk_by_id = {c["id"]: c for c in chunks}
+    generation_model = get_chat_model(is_judge=False, temperature=0.4)
+    analyses = _analyses(stage_cache)
+    plans = {lvl: CognitivePlan.model_validate(v["plan"]) for lvl, v in stage_cache["plans"].items()}
+    semaphore = asyncio.Semaphore(get_settings().GENERATION_CONCURRENCY)
 
-    sections = list(by_section.values())
-    rng.shuffle(sections)
-    picked = [rng.choice(group) for group in sections[:k]]
-    if len(picked) < k:
-        picked_ids = {c["id"] for c in picked}
-        rest = [c for c in pool if c["id"] not in picked_ids]
-        picked += rng.sample(rest, min(k - len(picked), len(rest)))
+    groups: dict[str, list[int]] = {}
+    for idx, item in enumerate(items):
+        groups.setdefault(item["chunk_id"], []).append(idx)
+    results: list[dict[str, Any]] = [{} for _ in items]
 
-    return sorted(picked, key=lambda c: c["metadata"].get("chunk_index", 0))
+    async def _question(item: dict[str, Any], blueprint: QuestionBlueprint, bp_fallback: bool, t3: dict[str, Any]) -> dict[str, Any]:
+        chk = chunk_by_id[item["chunk_id"]]
+        level = item["bloom_level"]
+        c_analysis = analyses[item["chunk_id"]]
+        context = focus_context(chk)
+        # Each question's trace holds only the stages that produced it
+        step_traces = [stage_cache["analyses"][chk["id"]]["trace"], stage_cache["plans"][level]["trace"], t3]
 
-
-def find_best_chunk_for_focus(
-    focus_point: str,
-    testable_content: list[Any],
-    retrieved_chunks: list[dict[str, Any]],
-    fallback_index: int = 0,
-) -> dict[str, Any]:
-    """Match the most relevant chunk from retrieved chunks for a specific testable knowledge point."""
-    if not retrieved_chunks:
-        return {}
-
-    # 1. Look for matching quote from testable_content
-    for tc in testable_content:
-        point = getattr(tc, "point", "") if not isinstance(tc, dict) else tc.get("point", "")
-        quote = getattr(tc, "source_quote", "") if not isinstance(tc, dict) else tc.get("source_quote", "")
-        if point == focus_point and quote:
-            clean_q = quote.strip().lower()
-            for chk in retrieved_chunks:
-                if clean_q[:40] in chk.get("text", "").lower():
-                    return chk
-
-    # 2. Token overlap match between focus_point and chunk texts
-    focus_tokens = set(re.findall(r'\w+', focus_point.lower()))
-    if focus_tokens:
-        best_chk = retrieved_chunks[fallback_index % len(retrieved_chunks)]
-        best_score = -1
-        for chk in retrieved_chunks:
-            chk_tokens = set(re.findall(r'\w+', chk.get("text", "").lower()))
-            overlap = len(focus_tokens & chk_tokens)
-            if overlap > best_score:
-                best_score = overlap
-                best_chk = chk
-        if best_score > 0:
-            return best_chk
-
-    # 3. Fallback to modulo index
-    return retrieved_chunks[fallback_index % len(retrieved_chunks)]
-
-
-def build_item_specs(
-    retrieved: list[dict[str, Any]],
-    analyses: dict[str, ContentAnalysis],
-) -> list[dict[str, Any]]:
-    """Interleave testable points across chunks (chunk A p1, chunk B p1, ..., chunk A p2, ...), dropping near-duplicates."""
-    per_chunk: list[list[dict[str, Any]]] = []
-    for chk in retrieved:
-        ca = analyses.get(chk["id"])
-        if ca is None:
-            continue
-        points = [tc.point for tc in ca.testable_content if tc.point] or ca.key_facts[:3] or [ca.topic or "Materi Pokok"]
-        per_chunk.append([{"point": p, "chunk_id": chk["id"]} for p in points])
-
-    specs: list[dict[str, Any]] = []
-    seen: list[set[str]] = []
-    for rank in range(max((len(p) for p in per_chunk), default=0)):
-        for points in per_chunk:
-            if rank < len(points):
-                toks = _tokens(points[rank]["point"])
-                if not any(_jaccard(toks, s) >= 0.6 for s in seen):
-                    specs.append(points[rank])
-                    seen.append(toks)
-    return specs
-
-
-def _merge_analyses(analyses: list[ContentAnalysis]) -> ContentAnalysis:
-    """Combine per-chunk analyses into one overview for session-level cognitive planning (Stage 2)."""
-    merged = ContentAnalysis(topic=next((a.topic for a in analyses if a.topic), "Materi Pembelajaran"))
-    for a in analyses:
-        merged.key_concepts += a.key_concepts[:2]
-        merged.key_facts += a.key_facts[:2]
-        merged.testable_content += a.testable_content[:2]
-    return merged
-
-
-def _source_reference(chunk: dict[str, Any]) -> str:
-    meta = chunk.get("metadata", {})
-    chap = meta.get("chapter", "")
-    sec = meta.get("section_heading", "")
-    page_num = meta.get("page_number")
-    page_str = f" (Hal. {page_num})" if page_num else ""
-    if chap and sec:
-        return f"{chap} - {sec}{page_str}"
-    if chap or sec:
-        return f"{chap or sec}{page_str}"
-    return f"Materi Buku{page_str}"
-
-
-def _build_generation_context(primary: dict[str, Any], retrieved: list[dict[str, Any]]) -> str:
-    """Focus chunk in full + supporting chunks. Stored on the candidate so the judge sees exactly this."""
-    others = "\n\n".join(c.get("text", "") for c in retrieved if c.get("id") != primary.get("id"))
-    if not others:
-        return primary.get("text", "")
-    return f"[FOKUS MATERI UTAMA]\n{primary.get('text', '')}\n\n[KONTEKS MATERI PENDUKUNG]\n{others[:_SUPPORT_CONTEXT_CHARS]}"
-
-
-def _load_few_shot(document_id: str, bloom_level: str) -> str:
-    """Two recent validated, clearly worded questions of the same level from this document."""
-    with get_session() as db:
-        past_qs = (
-            db.query(Question)
-            .join(ChatSession, Question.session_id == ChatSession.id)
-            .filter(
-                ChatSession.document_id == document_id,
-                Question.status == "final",
-                Question.bloom_level == bloom_level,
-                Question.quality_warnings.is_(None),
+        q_type = blueprint.question_type or plans[level].recommended_question_format or "esai"
+        async with semaphore:
+            q_pkg, t4 = await run_stage4_question_generation(
+                generation_model, context, blueprint, level, q_type,
+                stage_cache["few_shots"].get(level, NO_FEW_SHOT), 1,
             )
-            .order_by(Question.created_at.desc())
-            .limit(10)
-            .all()
-        )
-        good = [
-            q for q in past_qs
-            if not find_clarity_issue(str(q.question_text)) and not is_reflective_question(str(q.question_text))
-        ][:2]
-        if not good:
-            return "Tidak ada contoh tambahan."
-        return "\n".join(
-            f"Contoh {i}:\n  Pertanyaan: {q.question_text}\n  Jawaban: {q.answer_key}"
-            for i, q in enumerate(good, 1)
-        )
+        step_traces.append(t4.model_dump())
+
+        return {
+            "question": q_pkg.question,
+            "question_type": q_pkg.question_type or q_type,
+            "answer": q_pkg.expected_answer,
+            "explanation": q_pkg.explanation or f"Berdasarkan analisis materi '{c_analysis.topic}'. Poin uji: {blueprint.knowledge_point}.",
+            "source_reference": source_reference(chk),
+            # The assigned level is authoritative; the model's echo of it is not
+            "bloom_level": level,
+            "knowledge_point": q_pkg.knowledge_point or blueprint.knowledge_point or item["point"],
+            "grounding_evidence": q_pkg.grounding_evidence or blueprint.grounding_evidence,
+            # Stage 4 no longer asks for a rubric, so these are usually empty; kept when the model fills them
+            "answer_elements": [e.model_dump() for e in q_pkg.answer_elements],
+            "rubric": [r.model_dump() for r in q_pkg.rubric],
+            "content_analysis": c_analysis.model_dump(),
+            "cognitive_plan": plans[level].model_dump(),
+            "question_blueprint": blueprint.model_dump(),
+            "context": context,
+            "stage_traces": step_traces,
+            "chunk_id": chk["id"],
+            "has_fallback": bp_fallback or any(t.get("status") == "fallback" or t.get("has_fallback") for t in step_traces),
+        }
+
+    async def _chunk_group(chunk_id: str, indices: list[int]) -> None:
+        group = [items[i] for i in indices]
+        logger.info("[Multi-Stage Gen] %d question(s) from chunk '%s'.", len(group), source_reference(chunk_by_id[chunk_id])[:60])
+        async with semaphore:
+            blueprints, fallbacks, t3 = await run_stage3_blueprint_batch(
+                generation_model, focus_context(chunk_by_id[chunk_id]), group, plans, 1,
+            )
+        trace = t3.model_dump()
+        questions = await asyncio.gather(*[
+            _question(item, bp, fb, trace) for item, bp, fb in zip(group, blueprints, fallbacks, strict=True)
+        ])
+        for i, q in zip(indices, questions, strict=True):
+            results[i] = q
+
+    await asyncio.gather(*[_chunk_group(cid, idxs) for cid, idxs in groups.items()])
+    return results
 
 
 # ── Session-level Nodes (AQGState) ──
 
 @_timed("retrieve_context")
 def retrieve_context(state: AQGState) -> dict[str, Any]:
-    """Node 1: Retrieve context chunks. Topic requests use hybrid search; topic-less requests sample diverse sections."""
+    """Node 1: rank chunks (hybrid RAG) and keep the fewest whose estimated capacity covers the candidates."""
     logger.info("[LangGraph Node 1] retrieve_context started for session_id='%s'", state["session_id"])
-    settings = get_settings()
-
     document_id = state["document_id"]
-    chapter = state.get("chapter")
-    user_prompt = state.get("user_prompt", "")
-    num_questions = state.get("num_questions", 5)
-    top_k = min(settings.MAX_CONTEXT_CHUNKS, max(settings.RETRIEVAL_TOP_K, math.ceil(num_questions / 2)))
 
-    with get_session() as db:
-        chunks_db = db.query(Chunk).filter(Chunk.document_id == document_id).all()
-        if not chunks_db:
-            logger.error("No chunks found in DB for document_id='%s'", document_id)
-            return {
-                "retrieved_chunks": [],
-                "source_chunk_ids": [],
-                "error": f"Dokumen '{document_id}' belum diproses atau tidak memiliki chunk materi.",
-            }
-
-        chunks_data = [
-            {
-                "id": c.id,
-                "text": c.text,
-                "metadata": {
-                    "document_id": c.document_id,
-                    "category": c.category,
-                    "chapter": c.chapter or "",
-                    "section_heading": c.section_heading or "",
-                    "page_number": getattr(c, "page_number", 1) or 1,
-                    "chunk_index": getattr(c, "chunk_index", 0) or 0,
-                    "section_type": getattr(c, "section_type", "materi_pokok") or "materi_pokok",
-                },
-            }
-            for c in chunks_db
-        ]
-
-        manager = ChatStateManager(state["session_id"], db)
-        chat_history = manager.get_context_summary()
-
-    topic_query = sanitize_retrieval_query(user_prompt)
-    expanded_chapter_title = ""
-
-    if chapter:
-        target_ch_num = extract_chapter_number(chapter)
-        if target_ch_num:
-            matched_chapter_chunks = [
-                c for c in chunks_data
-                if extract_chapter_number(c["metadata"].get("chapter", "")) == target_ch_num
-            ]
-            if matched_chapter_chunks:
-                # Prioritize chunks strictly from this chapter
-                chunks_data = matched_chapter_chunks
-                expanded_chapter_title = matched_chapter_chunks[0]["metadata"].get("chapter", "")
-
-    if not topic_query:
-        # "Buatkan 10 soal" has no topic: searching with the raw prompt returns arbitrary chunks,
-        # so spread the questions over different sections of the document/chapter instead.
-        retrieved = select_diverse_chunks(chunks_data, top_k)
-        logger.info("[LangGraph Node 1] No topic in prompt; sampled %d diverse chunks.", len(retrieved))
-    else:
-        query = topic_query
-        if expanded_chapter_title:
-            query = f"{query} {expanded_chapter_title}"
-
-        # Build or reuse cached BM25 sparse index with robust content hash key
-        content_hash = hashlib.md5("".join(c["id"] for c in chunks_data).encode()).hexdigest()[:12]
-        cache_key = f"{document_id}_{len(chunks_data)}_{content_hash}"
-        if cache_key not in _sparse_cache:
-            sparse = SparseIndex()
-            sparse.build_index(chunks_data)
-            _sparse_cache[cache_key] = sparse
-        else:
-            sparse = _sparse_cache[cache_key]
-
-        hybrid = HybridSearch(
-            dense_index=get_shared_dense_index(),
-            sparse_index=sparse,
-            dense_weight=settings.HYBRID_DENSE_WEIGHT,
-            sparse_weight=settings.HYBRID_SPARSE_WEIGHT,
-        )
-        candidates = hybrid.search(
-            query=query,
-            top_k=top_k * 2,
-            document_id=document_id,
-            candidate_k=settings.CANDIDATE_TOP_K,
-            enable_rerank=settings.RERANKER_ENABLED,
-        )
-        if chapter and chunks_data:
-            # Enforce strict chapter isolation: filter out any chunk from other chapters
-            allowed_ids = {c["id"] for c in chunks_data}
-            candidates = [c for c in candidates if c["id"] in allowed_ids]
-
-        preferred = [
-            c for c in candidates
-            if (c.get("metadata") or {}).get("category") in _PREFERRED_CHUNK_CATEGORIES
-        ]
-        retrieved = (preferred if len(preferred) >= max(2, top_k // 2) else candidates)[:top_k]
-        logger.info("[LangGraph Node 1] Selected %d context chunks with query='%s'.", len(retrieved), query)
-
-    if not retrieved:
-        retrieved = chunks_data[:top_k]
-
-    return {
-        "retrieved_chunks": retrieved,
-        "source_chunk_ids": [c["id"] for c in retrieved],
-        "chat_history": chat_history,
-    }
-
-
-async def _generate_candidates(
-    state: AQGState,
-    items: list[dict[str, Any]],
-    stage_cache: dict[str, Any],
-) -> list[dict[str, Any]]:
-    """Run Stage 3 (blueprint) + Stage 4 (question package) for each item spec, in parallel."""
-    retrieved = state.get("retrieved_chunks", [])
-    chunk_by_id = {c["id"]: c for c in retrieved}
-    generation_model = get_chat_model(is_judge=False, temperature=0.4)
-    semaphore = asyncio.Semaphore(get_settings().GENERATION_CONCURRENCY)
-
-    analyses = {cid: ContentAnalysis.model_validate(v["analysis"]) for cid, v in stage_cache["analyses"].items()}
-    plans = {lvl: CognitivePlan.model_validate(v["plan"]) for lvl, v in stage_cache["plans"].items()}
-
-    async def _generate_single_item(item: dict[str, Any]) -> dict[str, Any]:
-        chk = chunk_by_id[item["chunk_id"]]
-        level = item["bloom_level"]
-        c_analysis = analyses[item["chunk_id"]]
-        cog_plan = plans[level]
-        src_ref = _source_reference(chk)
-        gen_context = _build_generation_context(chk, retrieved)
-
-        # Each question's trace holds only the stages that produced it
-        step_traces = [stage_cache["analyses"][item["chunk_id"]]["trace"], stage_cache["plans"][level]["trace"]]
-
-        async with semaphore:
-            logger.info("[Multi-Stage Gen] Item (%s, Focus: '%s', Chunk: '%s')...", level, item["point"][:40], src_ref[:50])
-            q_blueprint, t3 = await asyncio.to_thread(
-                run_stage3_question_blueprint, generation_model, c_analysis, cog_plan, item["point"], 1,
-            )
-            step_traces.append(t3.model_dump())
-
-            q_type = q_blueprint.question_type or cog_plan.recommended_question_format or "esai"
-            q_pkg, t4 = await asyncio.to_thread(
-                run_stage4_question_generation,
-                generation_model,
-                gen_context,
-                q_blueprint,
-                level,
-                q_type,
-                stage_cache["few_shots"].get(level, "Tidak ada contoh tambahan."),
-                1,
-            )
-            step_traces.append(t4.model_dump())
-
+    chunks = load_document_chunks(document_id)
+    if not chunks:
+        logger.error("No chunks found in DB for document_id='%s'", document_id)
         return {
-            "question": q_pkg.question,
-            "question_type": q_pkg.question_type or q_type,
-            "answer": q_pkg.expected_answer,
-            "explanation": q_pkg.explanation or f"Berdasarkan analisis materi '{c_analysis.topic}'. Poin uji: {q_blueprint.knowledge_point}.",
-            "source_reference": src_ref,
-            # The assigned level is authoritative; the model's echo of it is not
-            "bloom_level": level,
-            "knowledge_point": q_pkg.knowledge_point or q_blueprint.knowledge_point or item["point"],
-            "grounding_evidence": q_pkg.grounding_evidence or q_blueprint.grounding_evidence,
-            # Prompt Stage 4 tidak lagi meminta rubrik (sejak 49f1fa1), jadi biasanya kosong; tetap diteruskan bila model mengisinya
-            "answer_elements": [e.model_dump() for e in q_pkg.answer_elements],
-            "rubric": [r.model_dump() for r in q_pkg.rubric],
-            "content_analysis": c_analysis.model_dump(),
-            "cognitive_plan": cog_plan.model_dump(),
-            "question_blueprint": q_blueprint.model_dump(),
-            "context": gen_context,
-            "stage_traces": step_traces,
-            "chunk_id": chk["id"],
-            "has_fallback": any(t.get("status") == "fallback" or t.get("has_fallback") for t in step_traces),
+            "retrieved_chunks": [],
+            "reserve_chunks": [],
+            "source_chunk_ids": [],
+            "error": f"Dokumen '{document_id}' belum diproses atau tidak memiliki chunk materi.",
         }
 
-    return list(await asyncio.gather(*[_generate_single_item(it) for it in items]))
+    result = retrieve_chunks(
+        document_id=document_id,
+        chunks=chunks,
+        user_prompt=state.get("user_prompt", ""),
+        chapter=state.get("chapter"),
+        needed=candidate_count(state.get("num_questions", 5)),
+    )
+    return {
+        "retrieved_chunks": result.chunks,
+        "reserve_chunks": result.reserve,
+        "source_chunk_ids": [c["id"] for c in result.chunks],
+    }
 
 
 @_timed("generate_questions")
 async def generate_questions(state: AQGState) -> dict[str, Any]:
-    """
-    Node 2: Multi-Stage Question Generation.
-    Stage 1 runs once per retrieved chunk and Stage 2 once per Bloom level (both in parallel);
-    Stage 3 & 4 run concurrently per question item.
+    """Node 2: Multi-Stage generation over capacity-checked chunks.
+
+    Stage 1 measures each chunk's real capacity (valid testable points). If the selected chunks fall
+    short, the next reserve chunks are analysed (at most `_EXPANSION_ROUNDS` times) before any point is
+    reused. Each chunk then gets up to `max_questions_per_chunk` questions.
     """
     logger.info("[LangGraph Node 2] Multi-Stage generate_questions started")
-    retrieved = state.get("retrieved_chunks", [])
+    retrieved = list(state.get("retrieved_chunks", []))
     if not retrieved:
         return {"raw_questions": [], "error": state.get("error") or "Tidak ada konteks materi untuk pembuatan soal."}
 
-    settings = get_settings()
-    num_questions = state.get("num_questions", 5)
-    candidate_count = num_questions + (1 if num_questions <= 3 else 2)
-    levels = assign_bloom_levels(candidate_count, state.get("bloom_level"))
-    distinct_levels = list(dict.fromkeys(levels))
+    max_per_chunk = get_settings().MAX_QUESTIONS_PER_CHUNK
+    reserve = list(state.get("reserve_chunks", []))
+    levels = assign_bloom_levels(candidate_count(state.get("num_questions", 5)), state.get("bloom_level"))
 
-    analysis_model = get_chat_model(is_judge=False, temperature=0.1)
-    planning_model = get_chat_model(is_judge=False, temperature=0.2)
-    semaphore = asyncio.Semaphore(settings.GENERATION_CONCURRENCY)
+    stage_cache = await _ensure_analyses(retrieved, {})
+    point_lists = chunk_point_lists(retrieved, _analyses(stage_cache))
+    for _ in range(_EXPANSION_ROUNDS):
+        short = len(levels) - real_capacity(point_lists, max_per_chunk)
+        if short <= 0 or not reserve:
+            break
+        new_chunks, reserve = select_by_capacity(reserve, short, len(reserve))
+        if not new_chunks:
+            break
+        logger.info("[Node 2] Capacity short by %d; analysing %d reserve chunk(s).", short, len(new_chunks))
+        retrieved += new_chunks
+        stage_cache = await _ensure_analyses(new_chunks, stage_cache)
+        point_lists = chunk_point_lists(retrieved, _analyses(stage_cache))
 
-    async def _limited(fn, *args):
-        async with semaphore:
-            return await asyncio.to_thread(fn, *args)
+    items, spare_items = allocate_items(point_lists, levels, max_per_chunk)
+    if not items:
+        return {"raw_questions": [], "error": "Materi yang ditemukan tidak memuat poin yang dapat dijadikan soal."}
+    stage_cache = await _ensure_plans(state["document_id"], [it["bloom_level"] for it in items], stage_cache)
+    logger.info(
+        "[Node 2] %d candidates from %d chunks (real capacity %d).",
+        len(items), len({it["chunk_id"] for it in items}), real_capacity(point_lists, max_per_chunk),
+    )
 
-    # ── Stage 1: Context Understanding, one call per chunk so every testable point keeps its source chunk ──
-    stage1 = await asyncio.gather(*[
-        _limited(run_stage1_context_understanding, analysis_model, chk.get("text", ""), 1) for chk in retrieved
-    ])
-    analyses = {chk["id"]: ca for chk, (ca, _) in zip(retrieved, stage1, strict=True)}
-
-    # ── Stage 2: Cognitive Bloom Planning, one call per target level ──
-    merged = _merge_analyses(list(analyses.values()))
-    stage2 = await asyncio.gather(*[
-        _limited(run_stage2_cognitive_planning, planning_model, merged, lvl, 1) for lvl in distinct_levels
-    ])
-
-    stage_cache = {
-        "analyses": {
-            chk["id"]: {"analysis": ca.model_dump(), "trace": t.model_dump()}
-            for chk, (ca, t) in zip(retrieved, stage1, strict=True)
-        },
-        "plans": {
-            lvl: {"plan": plan.model_dump(), "trace": t.model_dump()}
-            for lvl, (plan, t) in zip(distinct_levels, stage2, strict=True)
-        },
-        "few_shots": {
-            lvl: _load_few_shot(state["document_id"], lvl) for lvl in MIXED_BLOOM_LEVELS
-        },
-    }
-
-    specs = build_item_specs(retrieved, analyses)
-    logger.info("[Node 2] %d distinct knowledge points from %d chunks.", len(specs), len(retrieved))
-    items = [{**specs[i % len(specs)], "bloom_level": levels[i]} for i in range(candidate_count)]
-    spare_items = specs[candidate_count:]
-
-    candidates = await _generate_candidates(state, items, stage_cache)
-    deduped = deduplicate_questions(candidates, threshold=0.70)
+    candidates = await _generate_candidates(retrieved, items, stage_cache)
+    deduped = deduplicate_questions(candidates, threshold=_DEDUP_THRESHOLD)
     logger.info("[Node 2] Generated %d candidates (%d after dedup).", len(candidates), len(deduped))
 
     return {
         "raw_questions": deduped,
+        "retrieved_chunks": retrieved,
+        "reserve_chunks": reserve,
+        "source_chunk_ids": [c["id"] for c in retrieved],
         "spare_items": spare_items,
         "stage_cache": stage_cache,
     }
@@ -726,132 +380,75 @@ async def validate_question(state: QuestionState) -> dict[str, Any]:
 def review_results(state: AQGState) -> dict[str, Any]:
     """Fan-in point: summarize the validation round."""
     validated = state.get("validated_questions", [])
-    n_final = sum(1 for q in validated if q.get("status") == "final")
-    logger.info("[Node Review] %d/%d candidates passed (target %d).", n_final, len(validated), state.get("num_questions", 5))
+    logger.info("[Node Review] %d/%d candidates passed (target %d).",
+                _count_final(validated), len(validated), state.get("num_questions", 5))
     return {}
 
 
 @_timed("top_up_questions")
 async def top_up_questions(state: AQGState) -> dict[str, Any]:
-    """Generate replacement candidates for questions that did not pass validation (one round only)."""
+    """Generate replacement candidates for questions that did not pass validation (one round only).
+
+    Knowledge points come from, in order: valid points not used yet, reserve chunks (analysed now and
+    checked for capacity), and finally the points whose question failed.
+    """
     validated = state.get("validated_questions", [])
-    n_final = sum(1 for q in validated if q.get("status") == "final")
-    deficit = max(0, state.get("num_questions", 5) - n_final)
-    count = deficit + 1
+    count = max(0, state.get("num_questions", 5) - _count_final(validated)) + 1
 
     # Keep the requested level mix: replace failed questions with the same levels
-    failed_levels = [q["bloom_level"] for q in validated if q.get("status") != "final"]
-    levels = (failed_levels + assign_bloom_levels(count, state.get("bloom_level")))[:count]
+    failed = [q for q in validated if q.get("status") != "final"]
+    levels = ([q["bloom_level"] for q in failed] + assign_bloom_levels(count, state.get("bloom_level")))[:count]
 
+    retrieved = list(state.get("retrieved_chunks", []))
+    reserve = list(state.get("reserve_chunks", []))
     spare = list(state.get("spare_items", []))
-    used_points = {q.get("knowledge_point", "") for q in validated}
+    stage_cache = state.get("stage_cache", {})
+
+    if len(spare) < count and reserve:
+        new_chunks, reserve = select_by_capacity(reserve, count - len(spare), len(reserve))
+        if new_chunks:
+            retrieved += new_chunks
+            stage_cache = await _ensure_analyses(new_chunks, stage_cache)
+            used_points = [q.get("knowledge_point", "") for q in validated] + [s["point"] for s in spare]
+            spare += interleave(chunk_point_lists(new_chunks, _analyses(stage_cache), exclude_points=used_points))
     if len(spare) < count:
-        # Fall back to points already used, preferring those whose question failed
-        reuse = [
-            {"point": q.get("knowledge_point", ""), "chunk_id": q["chunk_id"]}
-            for q in validated if q.get("status") != "final" and q.get("chunk_id")
+        spare += [
+            {"point": q.get("knowledge_point", ""), "quote": q.get("grounding_evidence", ""), "chunk_id": q["chunk_id"]}
+            for q in failed if q.get("chunk_id")
         ]
-        spare += reuse
     if not spare:
         return {"raw_questions": [], "top_up_done": True}
 
-    items = [{**spare[i % len(spare)], "bloom_level": levels[i]} for i in range(count)]
-    logger.info("[Node TopUp] Generating %d replacement candidates (deficit %d, %d unused points).",
-                count, deficit, len([s for s in spare if s["point"] not in used_points]))
+    items, rest = allocate_items([spare], levels, max_per_chunk=len(levels))
+    stage_cache = await _ensure_plans(state["document_id"], levels, stage_cache)
+    logger.info("[Node TopUp] Generating %d replacement candidates.", len(items))
 
-    candidates = await _generate_candidates(state, items, state["stage_cache"])
-    deduped = deduplicate_questions(candidates, threshold=0.70, existing=validated)
+    candidates = await _generate_candidates(retrieved, items, stage_cache)
     return {
-        "raw_questions": deduped,
-        "spare_items": spare[count:],
+        "raw_questions": deduplicate_questions(candidates, threshold=_DEDUP_THRESHOLD, existing=validated),
+        "retrieved_chunks": retrieved,
+        "reserve_chunks": reserve,
+        "source_chunk_ids": [c["id"] for c in retrieved],
+        "spare_items": rest,
+        "stage_cache": stage_cache,
         "top_up_done": True,
     }
 
 
-def _prune_stage_traces_for_db(traces: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Cap very long prompts to keep SQLite small. Raw responses are kept whole so their JSON stays readable."""
-    pruned_list = []
-    for tr in traces:
-        t_copy = tr.copy() if isinstance(tr, dict) else tr
-        prompt = t_copy.get("prompt_sent") if isinstance(t_copy, dict) else None
-        if isinstance(prompt, str) and len(prompt) > 6000:
-            t_copy["prompt_sent"] = prompt[:6000] + "... [truncated for storage]"
-        pruned_list.append(t_copy)
-    return pruned_list
-
-
-def _bloom_order(q: dict[str, Any]) -> int:
-    level = q.get("bloom_level", "")
-    return next((i for i, lvl in enumerate(MIXED_BLOOM_LEVELS) if lvl[:2] in level), len(MIXED_BLOOM_LEVELS))
-
-
 @_timed("persist_questions")
 def persist_questions(state: AQGState) -> dict[str, Any]:
-    """Node 6: Choose the best `num_questions` (passed first, then needs_review) and save them with their own logs/traces."""
-    logger.info("[LangGraph Node 6] persist_questions started")
-    session_id = state["session_id"]
-    source_chunk_ids = state.get("source_chunk_ids", [])
+    """Node 6: choose the best `num_questions` (passed first, then needs_review) and save them with their own logs/traces."""
     num_questions = state.get("num_questions", 5)
     validated = state.get("validated_questions", [])
 
     finals = [q for q in validated if q.get("status") == "final"]
     reviews = [q for q in validated if q.get("status") != "final"]
-    selected = sorted((finals + reviews)[:num_questions], key=_bloom_order)
+    selected = sorted((finals + reviews)[:num_questions], key=bloom_order)
 
-    saved: list[dict[str, Any]] = []
-    with get_session() as db:
-        for q in selected:
-            q = dict(q)
-            q_id = str(uuid.uuid4())
-            q["id"] = q_id
-            q["source_reference"] = q.get("source_reference") or "Materi Buku"
-            q["explanation"] = q.get("explanation") or f"Penjelasan berdasarkan materi {q.get('knowledge_point', '')}."
-
-            quality_issues = validate_answer_quality(q)
-            primary_cid = q.get("chunk_id")
-            ordered_chunk_ids = (
-                [primary_cid] + [cid for cid in source_chunk_ids if cid != primary_cid]
-                if primary_cid else source_chunk_ids
-            )
-
-            db.add(Question(
-                id=q_id,
-                session_id=session_id,
-                chunk_ids=json.dumps(ordered_chunk_ids, ensure_ascii=False),
-                question_type=q.get("question_type", "esai"),
-                question_text=q.get("question", ""),
-                options=json.dumps(q.get("options", {}), ensure_ascii=False) if q.get("options") else None,
-                answer_key=q.get("answer", ""),
-                explanation=q["explanation"],
-                source_reference=q["source_reference"],
-                bloom_level=q.get("bloom_level") or "C2-Memahami",
-                status=q.get("status", "needs_review"),
-                refinement_count=q.get("refinement_count", 0),
-                rubric=json.dumps(q.get("rubric", []), ensure_ascii=False),
-                answer_elements=json.dumps(q.get("answer_elements", []), ensure_ascii=False),
-                grounding_evidence=q.get("grounding_evidence", ""),
-                knowledge_point=q.get("knowledge_point", ""),
-                prompt_traces=json.dumps(_prune_stage_traces_for_db(q.get("stage_traces", [])), ensure_ascii=False),
-                quality_warnings=json.dumps(quality_issues, ensure_ascii=False) if quality_issues else None,
-            ))
-
-            # Only this question's own validation attempts
-            for log_item in q.get("validation_logs", []):
-                db.add(ValidationLog(
-                    question_id=q_id,
-                    attempt_number=log_item.get("attempt_number", 1),
-                    layer=log_item.get("layer", "grounding"),
-                    score_or_verdict=log_item.get("score_or_verdict", ""),
-                    feedback=log_item.get("feedback", ""),
-                    aspect_evaluations=log_item.get("aspect_evaluations"),
-                ))
-            saved.append(q)
-
-        db.commit()
-
+    saved = save_questions(state["session_id"], selected, state.get("source_chunk_ids", []))
     logger.info(
         "[Node 6] Persisted %d questions (%d final, %d needs_review) out of %d validated candidates.",
-        len(saved), sum(q["status"] == "final" for q in saved), sum(q["status"] != "final" for q in saved), len(validated),
+        len(saved), _count_final(saved), len(saved) - _count_final(saved), len(validated),
     )
     return {"finalized_questions": saved}
 
@@ -871,50 +468,49 @@ def _log(attempt: int, layer: str, verdict: str, score_or_verdict: str, feedback
 
 
 def grounding_validation(state: QuestionState) -> dict[str, Any]:
-    """
-    Layer 1: deterministic pre-check, then Fast-Reject grounding similarity between QA and grounding evidence.
+    """Layer 1: deterministic pre-check, then Fast-Reject grounding similarity between QA and grounding evidence.
+
     Score < threshold triggers refinement; otherwise proceed to the LLM Judge (Layer 2).
     """
-    settings = get_settings()
     q = state["question"]
     attempt = state["attempt"]
     logs = list(state.get("validation_logs", []))
 
+    def fail(layer: str, verdict: str, feedback: str, aspects: str | None = None) -> dict[str, Any]:
+        logs.append(_log(attempt, layer, "fail", verdict, feedback, aspects))
+        return {"validation_logs": logs, "failed_stage": "generation"}
+
     q_text = q.get("question", "")
     if not q_text:
-        logs.append(_log(attempt, "grounding", "fail", "fail (empty_question)", "Soal kosong."))
-        return {"validation_logs": logs, "failed_stage": "generation"}
+        return fail("grounding", "fail (empty_question)", "Soal kosong.")
 
     logger.info("[Validation] grounding (attempt %d) for: '%s'", attempt, q_text[:60])
 
     # Pre-check: reflective, classroom-referencing, or multi-question items are rejected before spending a judge call
     if is_reflective_question(q_text):
-        logs.append(_log(attempt, "pre_check", "fail", "fail (reflective_pattern)",
-                         "Soal bersifat reflektif / meta-learning. Ganti dengan fakta/teori/konsep konkret dari buku."))
-        return {"validation_logs": logs, "failed_stage": "generation"}
+        return fail("pre_check", "fail (reflective_pattern)",
+                    "Soal bersifat reflektif / meta-learning. Ganti dengan fakta/teori/konsep konkret dari buku.")
     clarity_issue = find_clarity_issue(q_text)
     if clarity_issue:
-        logs.append(_log(attempt, "pre_check", "fail", "fail (unclear_question)", clarity_issue))
-        return {"validation_logs": logs, "failed_stage": "generation"}
+        return fail("pre_check", "fail (unclear_question)", clarity_issue)
 
     grounding_res = compute_grounding_evidence_score(
         question_text=q_text,
         answer_text=q.get("answer", ""),
         grounding_evidence=q.get("grounding_evidence", ""),
-        fallback_chunks=[state.get("context", "")] if state.get("context") else [],
+        fallback_chunks=[state["context"]] if state.get("context") else [],
         dense_idx=get_shared_dense_index(),
     )
     g_score = grounding_res["score"]
-    fast_reject_thr = settings.FAST_REJECT_THRESHOLD
+    threshold = get_settings().FAST_REJECT_THRESHOLD
     aspects = json.dumps({"grounding_similarity": g_score, "target": grounding_res["target"]}, ensure_ascii=False)
 
-    if g_score < fast_reject_thr:
-        logs.append(_log(
-            attempt, "grounding", "fail", f"fail (fast_reject score={g_score:.3f})",
-            f"Grounding similarity sangat rendah ({g_score:.3f} < {fast_reject_thr:.2f}). Jawaban tidak selaras dengan materi teks buku.",
+    if g_score < threshold:
+        return fail(
+            "grounding", f"fail (fast_reject score={g_score:.3f})",
+            f"Grounding similarity sangat rendah ({g_score:.3f} < {threshold:.2f}). Jawaban tidak selaras dengan materi teks buku.",
             aspects,
-        ))
-        return {"validation_logs": logs, "failed_stage": "generation"}
+        )
 
     logs.append(_log(
         attempt, "grounding", "pass", f"pass (score={g_score:.3f})",
@@ -924,38 +520,39 @@ def grounding_validation(state: QuestionState) -> dict[str, Any]:
     return {"validation_logs": logs, "failed_stage": "none"}
 
 
-async def llm_judge_evaluation(state: QuestionState) -> dict[str, Any]:
-    """
-    Layer 2: Evaluate question using LLM-as-Judge across 5 dimensions:
-    grounding, bloom_adherence, bahasa, answerability, answer_alignment.
-    """
-    q = dict(state["question"])
-    attempt = state["attempt"]
-    target_bloom = q.get("bloom_level") or state.get("session_bloom_level") or "C2-Memahami"
+def _target_bloom(state: QuestionState) -> str:
+    return state["question"].get("bloom_level") or state.get("session_bloom_level") or "C2-Memahami"
 
-    judge_eval, judge_trace = await asyncio.to_thread(
-        run_llm_judge,
+
+async def llm_judge_evaluation(state: QuestionState) -> dict[str, Any]:
+    """Layer 2: LLM-as-Judge across grounding, bloom_adherence, bahasa, answerability, answer_alignment."""
+    q = state["question"]
+    attempt = state["attempt"]
+
+    judge_eval, judge_trace = await run_llm_judge(
         judge_model=get_chat_model(is_judge=True, temperature=0.05),
         retrieved_context=state.get("context", ""),
         grounding_evidence=q.get("grounding_evidence", ""),
         question=q.get("question", ""),
         expected_answer=q.get("answer", ""),
         explanation=q.get("explanation", ""),
-        target_bloom_level=target_bloom,
+        target_bloom_level=_target_bloom(state),
         attempt=attempt,
     )
 
-    verdict = judge_eval.overall.lower().strip()
+    failed_aspects = [
+        name for name in _JUDGE_ASPECTS
+        if getattr(judge_eval, name).status.lower().strip() != "pass"
+    ]
+    # The judge sometimes says overall "pass" while an aspect failed; a single failed aspect fails the question
+    verdict = "pass" if judge_eval.overall.lower().strip() == "pass" and not failed_aspects else "fail"
     failed_stage = judge_eval.failed_stage.lower().strip() if verdict != "pass" else "none"
     if verdict != "pass" and failed_stage not in ("generation", "planning"):
-        failed_stage = "generation"
-    logger.info("[Validation] judge overall='%s', failed_stage='%s' (attempt %d)", verdict, failed_stage, attempt)
+        failed_stage = "planning" if failed_aspects == ["bloom_adherence"] else "generation"
+    logger.info("[Validation] judge overall='%s', failed_stage='%s', failed_aspects=%s (attempt %d)",
+                verdict, failed_stage, failed_aspects, attempt)
 
-    feedback_parts = []
-    for aspect_name in ["grounding", "bloom_adherence", "bahasa", "answerability", "answer_alignment"]:
-        asp: Any = getattr(judge_eval, aspect_name, None)
-        if asp and getattr(asp, "status", "") == "fail":
-            feedback_parts.append(f"[{aspect_name.upper()}] {asp.feedback}")
+    feedback_parts = [f"[{name.upper()}] {getattr(judge_eval, name).feedback}" for name in failed_aspects]
     full_feedback = " ; ".join(feedback_parts) if feedback_parts else "Semua aspek evaluasi juri lolos."
 
     logs = list(state.get("validation_logs", []))
@@ -973,9 +570,9 @@ async def llm_judge_evaluation(state: QuestionState) -> dict[str, Any]:
 
 
 async def self_refinement(state: QuestionState) -> dict[str, Any]:
-    """
-    Smart Self-Refinement Router:
-    - failed_stage == "planning" -> Refinement Prompt B (re-plans Bloom & Blueprint) -> re-generates.
+    """Smart Self-Refinement Router.
+
+    - failed_stage == "planning" -> Refinement Prompt B (re-plans Bloom), then Stage 3 + Stage 4 again.
     - otherwise -> Refinement Prompt A (repairs wording/grounding/explanation).
     """
     attempt = state["attempt"] + 1
@@ -989,18 +586,15 @@ async def self_refinement(state: QuestionState) -> dict[str, Any]:
 
     chat_model = get_chat_model(is_judge=False, temperature=0.2)
     curr_traces = list(state.get("stage_traces", []))
-    target_bloom = q.get("bloom_level") or state.get("session_bloom_level") or "C2-Memahami"
+    target_bloom = _target_bloom(state)
 
     c_analysis = ContentAnalysis.model_validate(q.get("content_analysis") or {})
     cog_plan = CognitivePlan.model_validate(q.get("cognitive_plan") or {})
     q_blueprint = QuestionBlueprint.model_validate(q.get("question_blueprint") or {})
 
     if failed_stage == "planning":
-        judge_eval_data = state.get("judge_evaluation") or {}
-        detected_level = (judge_eval_data.get("bloom_adherence") or {}).get("detected_level") or "Mismatch"
-
-        new_plan, t_ref_b = await asyncio.to_thread(
-            run_refinement_b,
+        detected_level = ((state.get("judge_evaluation") or {}).get("bloom_adherence") or {}).get("detected_level") or "Mismatch"
+        new_plan, t_ref_b = await run_refinement_b(
             chat_model=chat_model,
             prev_plan=cog_plan,
             question_text=q.get("question", ""),
@@ -1012,20 +606,19 @@ async def self_refinement(state: QuestionState) -> dict[str, Any]:
         )
         curr_traces.append(t_ref_b.model_dump())
 
-        # Re-run Stage 3 Blueprint with new cognitive plan, keeping the same knowledge point
-        new_blueprint, t_bp = await asyncio.to_thread(
-            run_stage3_question_blueprint, chat_model, c_analysis, new_plan, q.get("knowledge_point"), attempt,
+        # Re-run Stage 3 with the new cognitive plan, keeping the same knowledge point
+        new_blueprint, t_bp = await run_stage3_question_blueprint(
+            chat_model, c_analysis, new_plan, q.get("knowledge_point"), attempt,
         )
         curr_traces.append(t_bp.model_dump())
 
-        new_pkg, t_gen = await asyncio.to_thread(
-            run_stage4_question_generation,
+        new_pkg, t_gen = await run_stage4_question_generation(
             chat_model=chat_model,
             retrieved_context=context_str,
             blueprint=new_blueprint,
             target_bloom_level=target_bloom,
             question_type=new_blueprint.question_type or "esai",
-            few_shot_examples="Tidak ada contoh tambahan.",
+            few_shot_examples=NO_FEW_SHOT,
             attempt=attempt,
         )
         curr_traces.append(t_gen.model_dump())
@@ -1036,8 +629,7 @@ async def self_refinement(state: QuestionState) -> dict[str, Any]:
         q["question_blueprint"] = new_blueprint.model_dump()
         q["has_fallback"] = q.get("has_fallback") or t_gen.has_fallback
     else:
-        new_pkg, t_ref_a = await asyncio.to_thread(
-            run_refinement_a,
+        new_pkg, t_ref_a = await run_refinement_a(
             chat_model=chat_model,
             question=q.get("question", ""),
             expected_answer=q.get("answer", ""),

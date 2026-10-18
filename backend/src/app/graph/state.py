@@ -16,13 +16,13 @@ class AQGState(TypedDict):
     num_questions: int
 
     # ── Context / Retrieved Chunks ──
-    retrieved_chunks: list[dict[str, Any]]
+    retrieved_chunks: list[dict[str, Any]]  # chunk budget follows num_questions; one chunk may yield several questions
+    reserve_chunks: list[dict[str, Any]]  # next-ranked chunks, analysed only if the top-up round needs new points
     source_chunk_ids: list[str]
-    chat_history: str
 
     # ── Multi-Stage Generation Artifacts ──
     raw_questions: list[dict[str, Any]]  # candidates of the current validation round
-    spare_items: list[dict[str, Any]]  # unused (knowledge point, chunk, bloom) specs for top-up
+    spare_items: list[dict[str, Any]]  # unused (knowledge point, chunk) specs for top-up
     stage_cache: dict[str, Any]  # shared Stage 1/2 outputs + traces reused by the top-up round
     top_up_done: bool
 

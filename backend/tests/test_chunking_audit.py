@@ -1,15 +1,14 @@
 """Comprehensive unit and regression tests for Chapter Extraction, Section Heading Scoping, Rubric Filtering, and Context Traceability."""
 
-from app.services.ingestion.extractor import (
-    PageContent,
-    extract_chapter_from_raw_page,
-)
 from app.services.ingestion.chunkers.classifiers import (
     SECTION_HEADING_REGEX,
 )
 from app.services.ingestion.chunkers.fixed_chunker import FixedChunker
+from app.services.ingestion.extractor import (
+    PageContent,
+    extract_chapter_from_raw_page,
+)
 from app.services.retrieval.hybrid_search import is_exercise_or_instruction_chunk
-from app.graph.nodes import find_best_chunk_for_focus
 
 
 def test_extract_chapter_from_running_headers():
@@ -91,26 +90,3 @@ def test_fixed_chunker_inherits_chapter_and_heading():
     assert chunks[0].chapter == "Bab 5: Energi untuk Masa Depan"
     assert chunks[0].section_heading == "Topik A: Mengapa Kita Memerlukan Energi"
     assert chunks[0].page_number in (121, 122)
-
-
-
-def test_find_best_chunk_for_focus():
-    """find_best_chunk_for_focus should match the specific chunk containing the focus point quote."""
-    chunks = [
-        {"id": "c1", "text": "Hidung dan trakea adalah saluran pernapasan bagian atas.", "metadata": {}},
-        {"id": "c2", "text": "Di dalam lambung terjadi pencernaan kimiawi dengan bantuan asam klorida dan pepsin.", "metadata": {}},
-        {"id": "c3", "text": "Energi surya dihasilkan dari pancaran sinar matahari yang ditangkap sel surya.", "metadata": {}},
-    ]
-
-    # Test exact quote match
-    from app.services.generation.schemas import TestableContentItem
-    testable = [
-        TestableContentItem(point="Pencernaan kimiawi lambung", source_quote="Di dalam lambung terjadi pencernaan kimiawi")
-    ]
-
-    best = find_best_chunk_for_focus("Pencernaan kimiawi lambung", testable, chunks, fallback_index=0)
-    assert best["id"] == "c2"
-
-    # Test token overlap fallback
-    best_solar = find_best_chunk_for_focus("Pemanfaatan sinar matahari dan sel surya", [], chunks, fallback_index=0)
-    assert best_solar["id"] == "c3"

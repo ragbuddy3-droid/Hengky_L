@@ -33,7 +33,6 @@ def find_yaml_config() -> str:
     """Find settings.yaml location dynamically."""
     candidates = [
         "configs/settings.yaml",
-        "backend_new/configs/settings.yaml",
         "backend/configs/settings.yaml",
         os.path.join(os.path.dirname(__file__), "../../../configs/settings.yaml"),
         os.path.join(os.path.dirname(__file__), "../../configs/settings.yaml"),
@@ -77,8 +76,6 @@ class LLMConfig(BaseModel):
 
 class ValidationConfig(BaseModel):
     fast_reject_threshold: float = 0.40
-    grounding_threshold: float = 0.50
-    grounding_auto_pass_threshold: float = 0.80  # Deprecated backward compatibility
     max_refinement_attempts: int = 3
 
 
@@ -93,11 +90,14 @@ class RetrievalConfig(BaseModel):
     hybrid_dense_weight: float = 0.6
     hybrid_sparse_weight: float = 0.4
     reranker_enabled: bool = True
+    max_questions_per_chunk: int = 3  # upper bound of a chunk's question capacity
+    min_relative_score: float = 0.5  # drop topic candidates scoring below this fraction of the best one
+    reserve_chunks: int = 3  # extra ranked chunks for capacity expansion and the top-up round
 
 
 class GenerationConfig(BaseModel):
     concurrency: int = 5  # max parallel LLM work items (generation & validation)
-    max_context_chunks: int = 10
+    max_context_chunks: int = 10  # upper bound of the chunk budget
 
 
 class ChunkingConfig(BaseModel):
@@ -178,14 +178,6 @@ class Settings(BaseModel):
         return self.validation.fast_reject_threshold
 
     @property
-    def GROUNDING_THRESHOLD(self) -> float:
-        return self.validation.grounding_threshold
-
-    @property
-    def GROUNDING_AUTO_PASS_THRESHOLD(self) -> float:
-        return self.validation.grounding_auto_pass_threshold
-
-    @property
     def MAX_REFINEMENT_ATTEMPTS(self) -> int:
         return self.validation.max_refinement_attempts
 
@@ -204,6 +196,18 @@ class Settings(BaseModel):
     @property
     def CANDIDATE_TOP_K(self) -> int:
         return self.retrieval.candidate_top_k
+
+    @property
+    def MAX_QUESTIONS_PER_CHUNK(self) -> int:
+        return self.retrieval.max_questions_per_chunk
+
+    @property
+    def MIN_RELATIVE_SCORE(self) -> float:
+        return self.retrieval.min_relative_score
+
+    @property
+    def RESERVE_CHUNKS(self) -> int:
+        return self.retrieval.reserve_chunks
 
     @property
     def RERANKER_ENABLED(self) -> bool:

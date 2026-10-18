@@ -7,6 +7,7 @@ from typing import Any
 
 import app.graph.nodes as nodes
 import app.graph.workflow as workflow
+from app.services.generation import planner
 from app.services.generation.schemas import (
     ContentAnalysis,
     JudgeAspectResult,
@@ -17,6 +18,7 @@ from app.services.generation.schemas import (
 from app.services.generation.schemas import (
     TestableContentItem as ContentPoint,
 )
+from app.services.retrieval import retriever
 from app.services.validation.quality_checks import find_clarity_issue, validate_answer_quality
 
 
@@ -24,7 +26,7 @@ def _trace(name: str, attempt: int) -> PromptStageTrace:
     return PromptStageTrace(stage_name=name, attempt_number=attempt, prompt_sent="p", raw_response="{}")
 
 
-def _fake_judge(**kwargs: Any):
+async def _fake_judge(**kwargs: Any):
     ok = "GAGAL" not in kwargs["question"]
     aspect = JudgeAspectResult(status="pass" if ok else "fail", feedback="ok" if ok else "tidak ada di konteks")
     result = JudgeEvaluationResult(
@@ -35,7 +37,7 @@ def _fake_judge(**kwargs: Any):
     return result, _trace("Layer 2: LLM-as-Judge", kwargs["attempt"])
 
 
-def _fake_refinement_a(**kwargs: Any):
+async def _fake_refinement_a(**kwargs: Any):
     pkg = QuestionPackage(question=kwargs["question"], expected_answer=kwargs["expected_answer"])
     return pkg, _trace("Refinement Prompt A (Generation Repair)", kwargs["attempt"])
 
@@ -80,7 +82,7 @@ def _run(graph) -> dict[str, Any]:
     return asyncio.run(graph.ainvoke({
         "session_id": "s", "document_id": "d", "user_prompt": "Buatkan 3 soal", "chapter": None,
         "bloom_level": None, "num_questions": 3, "retrieved_chunks": [], "source_chunk_ids": [],
-        "chat_history": "", "raw_questions": [], "spare_items": [], "stage_cache": {}, "top_up_done": False,
+        "reserve_chunks": [], "raw_questions": [], "spare_items": [], "stage_cache": {}, "top_up_done": False,
         "validated_questions": [], "finalized_questions": [], "error": None,
     }))
 
@@ -107,6 +109,26 @@ def test_validation_logs_are_isolated_per_question(monkeypatch):
     assert {log["attempt_number"] for log in failed["validation_logs"]} == {1, 2, 3}
 
 
+def test_failed_aspect_overrides_overall_pass(monkeypatch):
+    async def inconsistent_judge(**kwargs: Any):
+        result = JudgeEvaluationResult(
+            grounding=JudgeAspectResult(status="fail", feedback="Klaim 'kemiringan poros' tidak ada di CONTEXT."),
+            overall="pass",
+            failed_stage="none",
+        )
+        return result, _trace("Layer 2: LLM-as-Judge", kwargs["attempt"])
+
+    graph = _build_test_graph(monkeypatch, [_candidate("Mengapa Venus panas?", 0)])
+    monkeypatch.setattr(nodes, "run_llm_judge", inconsistent_judge)
+    q = _run(graph)["finalized_questions"][0]
+
+    assert q["status"] == "needs_review"
+    judge_logs = [log for log in q["validation_logs"] if log["layer"] == "judge"]
+    assert judge_logs[0]["verdict"] == "fail"
+    assert "kemiringan poros" in judge_logs[0]["feedback"]
+    assert q["refinement_count"] == 2  # failed_stage fell back to "generation" -> Refinement A
+
+
 def test_question_failing_all_attempts_is_needs_review(monkeypatch):
     final_state = _run(_build_test_graph(monkeypatch, [_candidate("GAGAL: Apa itu net?", 0)]))
     q = final_state["finalized_questions"][0]
@@ -124,35 +146,35 @@ def test_unclear_question_fails_pre_check(monkeypatch):
 
 
 def test_mixed_bloom_distribution():
-    counts = Counter(nodes.assign_bloom_levels(10, None))
+    counts = Counter(planner.assign_bloom_levels(10, None))
     assert counts == {"C1-Mengingat": 3, "C2-Memahami": 3, "C3-Mengaplikasikan": 2, "C4-Menganalisis": 2}
-    assert set(nodes.assign_bloom_levels(4, "C4-Menganalisis")) == {"C4-Menganalisis"}
-    assert set(nodes.assign_bloom_levels(2, "C6-Mencipta")) == {"C2-Memahami"}
+    assert set(planner.assign_bloom_levels(4, "C4-Menganalisis")) == {"C4-Menganalisis"}
+    assert set(planner.assign_bloom_levels(2, "C6-Mencipta")) == {"C2-Memahami"}
 
 
 def test_sanitize_query_without_topic_is_empty():
-    assert nodes.sanitize_retrieval_query("Buatkan 10 soal") == ""
-    assert nodes.sanitize_retrieval_query("Buatkan 5 soal C4 bab 2") == ""
-    assert nodes.sanitize_retrieval_query("buat 3 soal tentang sistem pencernaan") == "sistem pencernaan"
+    assert retriever.sanitize_retrieval_query("Buatkan 10 soal") == ""
+    assert retriever.sanitize_retrieval_query("Buatkan 5 soal C4 bab 2") == ""
+    assert retriever.sanitize_retrieval_query("buat 3 soal tentang sistem pencernaan") == "sistem pencernaan"
 
 
-def test_item_specs_interleave_chunks_and_drop_duplicates():
-    retrieved = [{"id": "a"}, {"id": "b"}]
+def test_point_lists_drop_duplicates_across_chunks():
+    text = "Fungsi akar tumbuhan. Fungsi batang tumbuhan. Proses fotosintesis daun."
+    retrieved = [{"id": "a", "text": text}, {"id": "b", "text": text}]
     analyses = {
         "a": ContentAnalysis(testable_content=[
-            ContentPoint(point="Fungsi akar tumbuhan", source_quote="q"),
-            ContentPoint(point="Fungsi batang tumbuhan", source_quote="q"),
+            ContentPoint(point="Fungsi akar tumbuhan", source_quote="Fungsi akar tumbuhan"),
+            ContentPoint(point="Fungsi batang tumbuhan", source_quote="Fungsi batang tumbuhan"),
         ]),
         "b": ContentAnalysis(testable_content=[
-            ContentPoint(point="Fungsi akar tumbuhan", source_quote="q"),
-            ContentPoint(point="Proses fotosintesis daun", source_quote="q"),
+            ContentPoint(point="Fungsi akar tumbuhan", source_quote="Fungsi akar tumbuhan"),
+            ContentPoint(point="Proses fotosintesis daun", source_quote="Proses fotosintesis daun"),
         ]),
     }
-    specs = nodes.build_item_specs(retrieved, analyses)
-    assert [(s["chunk_id"], s["point"]) for s in specs] == [
-        ("a", "Fungsi akar tumbuhan"),
-        ("a", "Fungsi batang tumbuhan"),
-        ("b", "Proses fotosintesis daun"),
+    lists = planner.chunk_point_lists(retrieved, analyses)
+    assert [[p["point"] for p in points] for points in lists] == [
+        ["Fungsi akar tumbuhan", "Fungsi batang tumbuhan"],
+        ["Proses fotosintesis daun"],
     ]
 
 
@@ -170,7 +192,7 @@ def test_select_diverse_chunks_spreads_sections_and_skips_activities():
         "id": "act", "text": "Diskusikan bersama teman. " * 20,
         "metadata": {"category": "aktivitas_diskusi", "chapter": "Bab 1", "section_heading": "Aktivitas", "chunk_index": 99},
     })
-    picked = nodes.select_diverse_chunks(chunks, 5, rng=random.Random(0))
+    picked = retriever.select_diverse_chunks(chunks, 5, rng=random.Random(0))
     assert len(picked) == 5
     assert len({c["metadata"]["section_heading"] for c in picked}) == 5
     assert all(c["metadata"]["category"] != "aktivitas_diskusi" for c in picked)

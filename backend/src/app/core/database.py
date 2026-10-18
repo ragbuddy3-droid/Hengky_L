@@ -73,6 +73,7 @@ def init_db() -> None:
         ChatMessage,
         ChatSession,
         Chunk,
+        ChunkAnalysis,
         Document,
         Question,
         ValidationLog,
