@@ -64,6 +64,7 @@ from app.services.validation.grounding_checker import compute_grounding_evidence
 from app.services.validation.quality_checks import (
     deduplicate_questions,
     find_clarity_issue,
+    find_unanswerable_answer,
     is_reflective_question,
 )
 
@@ -523,13 +524,17 @@ def grounding_validation(state: QuestionState) -> dict[str, Any]:
     logger.info("[Validation] grounding (attempt %d) for: '%s'", attempt, q_text[:60])
     progress.candidate(state.get("session_id"), state.get("candidate_id"), "validating", q, attempt)
 
-    # Pre-check: reflective, classroom-referencing, or multi-question items are rejected before spending a judge call
+    # Pre-check: reflective, classroom/text-referencing, multi-question, or unanswerable items are rejected
+    # before spending a judge call
     if is_reflective_question(q_text):
         return fail("pre_check", "fail (reflective_pattern)",
                     "Soal bersifat reflektif / meta-learning. Ganti dengan fakta/teori/konsep konkret dari buku.")
     clarity_issue = find_clarity_issue(q_text)
     if clarity_issue:
         return fail("pre_check", "fail (unclear_question)", clarity_issue)
+    unanswerable = find_unanswerable_answer(q.get("answer", ""))
+    if unanswerable:
+        return fail("pre_check", "fail (unanswerable)", unanswerable)
 
     grounding_res = compute_grounding_evidence_score(
         question_text=q_text,

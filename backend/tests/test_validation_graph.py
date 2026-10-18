@@ -19,7 +19,11 @@ from app.services.generation.schemas import (
     TestableContentItem as ContentPoint,
 )
 from app.services.retrieval import retriever
-from app.services.validation.quality_checks import find_clarity_issue, validate_answer_quality
+from app.services.validation.quality_checks import (
+    find_clarity_issue,
+    find_unanswerable_answer,
+    validate_answer_quality,
+)
 
 
 def _trace(name: str, attempt: int) -> PromptStageTrace:
@@ -220,3 +224,23 @@ def test_quality_checks_accept_imperative_and_flag_vague_questions():
     assert find_clarity_issue("Apa fungsi keranjang dalam permainan bola target yang kamu mainkan?")
     assert find_clarity_issue("Apa yang harus kamu lakukan agar tidak menabrak temanmu?") is None
     assert find_clarity_issue("Mengapa tumbuhan membutuhkan cahaya matahari?") is None
+
+
+def test_text_referencing_and_unanswerable_questions_are_flagged():
+    assert find_clarity_issue("Apa contoh energi kimia yang disebutkan dalam teks?")
+    assert find_clarity_issue("Menurut bacaan, apa fungsi akar?")
+    assert find_clarity_issue("Apa itu teks prosedur?") is None
+
+    assert find_unanswerable_answer("tidak disebutkan")
+    assert find_unanswerable_answer("Nama negaranya tidak dijelaskan dalam teks.")
+    assert find_unanswerable_answer("Akar tidak disebutkan sebagai bagian bunga.") is None
+    assert find_unanswerable_answer("Lima zona tantangan") is None
+
+
+def test_unanswerable_question_fails_pre_check(monkeypatch):
+    q = _candidate("Negara mana yang dilaporkan berhasil memproduksi 40% listriknya dari tenaga angin?", 0)
+    q["answer"] = "tidak disebutkan"
+    final_state = _run(_build_test_graph(monkeypatch, [q]))
+    logs = final_state["finalized_questions"][0]["validation_logs"]
+    assert logs[0]["layer"] == "pre_check"
+    assert logs[0]["score_or_verdict"] == "fail (unanswerable)"

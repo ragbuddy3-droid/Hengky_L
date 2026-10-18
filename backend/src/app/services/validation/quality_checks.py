@@ -24,6 +24,19 @@ VAGUE_REFERENCE_PATTERNS = [
     r"\byang\s+(?:kamu|kalian)\s+(?:mainkan|pelajari)\b",
 ]
 
+# Students only see the question, never the source text, so "menurut teks" points at nothing
+TEXT_REFERENCE_PATTERNS = [
+    r"\b(?:dalam|pada|di|menurut|berdasarkan|dari)\s+(?:teks|bacaan|wacana|materi|buku|konteks)(?:\s+(?:ini|tersebut|di\s*atas))?\b",
+    r"\byang\s+(?:disebutkan|dijelaskan|tertulis|dibahas|diceritakan)\s+(?:dalam|pada|di)\b",
+]
+
+# An expected answer saying the information is missing means the question asks for something the material lacks
+UNANSWERABLE_ANSWER_PATTERNS = [
+    r"^\W*(?:tidak|belum)\s+(?:disebutkan|dijelaskan|diketahui|tertulis|dicantumkan|ada\s+(?:informasi|keterangan|data))",
+    r"\b(?:tidak|belum)\s+(?:disebutkan|dijelaskan|tertulis|dicantumkan)\s+(?:secara\s+\w+\s+)?(?:dalam|di|pada)\s+(?:teks|materi|bacaan|konteks|buku)",
+    r"\b(?:teks|materi|bacaan|konteks)\s+(?:tidak|tidak\s+pernah)\s+(?:menyebutkan|menjelaskan|mencantumkan)",
+]
+
 # Reflective / meta-learning questions ask about the lesson itself, not the book content
 REFLECTIVE_PATTERNS = [
     r"setelah mempelajari bab ini",
@@ -93,8 +106,24 @@ def find_clarity_issue(q_text: str) -> str | None:
             "Soal merujuk pengalaman kelas (mis. 'yang telah kamu pelajari/lakukan'). "
             "Tulis soal yang mandiri: sebut langsung konsep/objek dari materi buku."
         )
+    if any(re.search(p, text) for p in TEXT_REFERENCE_PATTERNS):
+        return (
+            "Soal merujuk teks/bacaan (mis. 'yang disebutkan dalam teks'), padahal siswa tidak melihat teksnya. "
+            "Tanyakan fakta atau konsepnya secara langsung."
+        )
     if q_text.count("?") >= 2:
         return "Soal berisi lebih dari satu pertanyaan. Ajukan SATU pertanyaan saja per butir soal."
+    return None
+
+
+def find_unanswerable_answer(answer: str) -> str | None:
+    """Return a feedback message if the expected answer admits the material does not contain it."""
+    text = answer.lower().strip()
+    if any(re.search(p, text) for p in UNANSWERABLE_ANSWER_PATTERNS):
+        return (
+            "Jawaban ideal menyatakan informasinya tidak ada di materi, jadi soal tidak dapat dijawab. "
+            "Ganti dengan pertanyaan tentang fakta yang benar-benar tertulis di materi."
+        )
     return None
 
 
@@ -120,6 +149,9 @@ def validate_answer_quality(question: dict[str, Any]) -> list[str]:
     clarity_issue = find_clarity_issue(q_text) if q_text else None
     if clarity_issue:
         issues.append(clarity_issue)
+    unanswerable = find_unanswerable_answer(answer) if answer else None
+    if unanswerable:
+        issues.append(unanswerable)
 
     # Check if answer is essentially identical to question (high word overlap)
     if q_text and answer:

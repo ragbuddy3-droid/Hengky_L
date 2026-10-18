@@ -227,7 +227,8 @@ Ketentuan Khusus Penulisan Soal SD:
    - Jika CONTEXT hanya berisi data/fakta tanpa penjelasan sebab-akibat, buat soal perbandingan atau penerapan data tersebut.
 6. Jawaban Ideal (expected_answer): Harus 100% didukung fakta materi CONTEXT, dirumuskan dengan kalimat utuh, komunikatif, dan runtut sebagai standar kunci jawaban guru. Jangan menambah fakta pelengkap dari luar CONTEXT.
 7. Penjelasan (explanation): Berikan penjelasan ringkas dan edukatif mengapa jawaban tersebut benar, hanya dengan merujuk fakta di CONTEXT.
-8. Soal Mandiri & Jelas: Soal harus bisa dipahami oleh siswa yang membacanya tanpa mengikuti pelajaran di kelas. Sebut langsung nama konsep/objek/peristiwanya. DILARANG merujuk pengalaman kelas seperti "yang telah kamu pelajari", "yang sudah kalian lakukan", "di kelas", "di sekolahmu", atau "aktivitas tadi".
+8. Soal Mandiri & Jelas: Soal harus bisa dipahami oleh siswa yang membacanya tanpa mengikuti pelajaran di kelas. Sebut langsung nama konsep/objek/peristiwanya. DILARANG merujuk pengalaman kelas seperti "yang telah kamu pelajari", "yang sudah kalian lakukan", "di kelas", "di sekolahmu", atau "aktivitas tadi". DILARANG juga merujuk teks sumber seperti "dalam teks", "menurut bacaan", atau "yang disebutkan dalam materi", karena siswa tidak melihat CONTEXT.
+11. Harus Bisa Dijawab: Tanyakan hanya informasi yang benar-benar tertulis di CONTEXT. Jika CONTEXT tidak menyebut suatu detail (nama, angka, tempat), jangan tanyakan detail itu. `expected_answer` tidak boleh berbunyi "tidak disebutkan" atau sejenisnya.
 9. Satu Pertanyaan: Tulis tepat SATU pertanyaan per butir. Jangan menambahkan pertanyaan kedua (contoh salah: "Jelaskan cara bermainnya. Apa tujuannya?").
 10. Akhiri pertanyaan dengan tanda tanya (?), atau dengan titik (.) jika berupa kalimat perintah seperti "Jelaskan ..." / "Sebutkan ...".
 
@@ -269,8 +270,8 @@ Evaluasi 5 aspek kualitas:
    - "fail" jika ada SATU saja klaim fakta yang tidak tertulis di CONTEXT, walaupun benar menurut pengetahuan umum, atau jika jawaban menarik kesimpulan sebab-akibat yang tidak dinyatakan CONTEXT.
    - Pada feedback, sebutkan klaim yang tidak didukung CONTEXT secara persis.
 2. bloom_adherence — evaluasi level kognitif yang SEBENARNYA dituntut soal ini (deteksi ulang secara independen). Apakah cocok dengan TARGET BLOOM? (Catatan: C3/C4 untuk SD membutuhkan skenario/analisis sebab-akibat, bukan hafalan definisi).
-3. bahasa — apakah bahasa jelas, komunikatif, ramah anak usia SD (6-12 tahun), berisi SATU pertanyaan, dan mandiri (tidak merujuk "yang telah kamu pelajari/lakukan di kelas")?
-4. answerability — apakah soal dapat dijawab tuntas hanya dengan membaca CONTEXT yang ada? "fail" jika siswa membutuhkan pengetahuan di luar CONTEXT untuk menjawab.
+3. bahasa — apakah bahasa jelas, komunikatif, ramah anak usia SD (6-12 tahun), berisi SATU pertanyaan, dan mandiri (tidak merujuk "yang telah kamu pelajari/lakukan di kelas" maupun "dalam teks/bacaan", karena siswa tidak melihat teks sumbernya)?
+4. answerability — apakah soal dapat dijawab tuntas hanya dengan membaca CONTEXT yang ada? "fail" jika siswa membutuhkan pengetahuan di luar CONTEXT untuk menjawab, jika soal menanyakan detail yang tidak tertulis di CONTEXT, atau jika expected_answer menyatakan informasinya "tidak disebutkan"/"tidak dijelaskan".
 5. answer_alignment — apakah expected_answer & explanation menjawab question secara tepat, runtut, konsisten (tidak saling bertentangan), dan edukatif?
 
 "overall" adalah "pass" HANYA jika kelima aspek "pass"; satu aspek "fail" berarti "overall" = "fail".
