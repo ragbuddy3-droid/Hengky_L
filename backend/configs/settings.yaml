@@ -44,3 +44,9 @@ chunking:
   fixed_chunk_size: 1000
   fixed_chunk_overlap: 150
 
+auth:
+  # jwt_secret dibaca dari .env (JWT_SECRET); jika kosong dibuat otomatis di data/.jwt_secret
+  session_days: 7        # lama login tanpa "Ingat saya"
+  remember_days: 30      # lama login dengan "Ingat saya"
+  guest_ttl_hours: 24    # data tamu yang tidak aktif selama ini dihapus
+  cookie_secure: false   # true jika disajikan lewat HTTPS

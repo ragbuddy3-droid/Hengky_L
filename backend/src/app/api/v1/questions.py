@@ -4,8 +4,9 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.api.deps import get_owner
 from app.core.database import get_session
 from app.models.db_models import ChatSession, Chunk, Document, Question, ValidationLog
 from app.schemas.api_schemas import (
@@ -14,6 +15,7 @@ from app.schemas.api_schemas import (
     UsedChunkResponse,
     ValidationLogResponse,
 )
+from app.services.auth.owner import Owner
 
 logger = logging.getLogger(__name__)
 
@@ -73,10 +75,15 @@ def _used_chunks(db: Any, chunk_ids_json: Any) -> list[UsedChunkResponse]:
 
 
 @router.get("/{question_id}", response_model=QuestionDetailResponse)
-def get_question(question_id: str):
+def get_question(question_id: str, owner: Owner = Depends(get_owner)):
     """Get question detail with multi-stage prompt traces, source chunks, and validation logs."""
     with get_session() as db:
-        q = db.query(Question).filter(Question.id == question_id).first()
+        q = (
+            db.query(Question)
+            .join(ChatSession, Question.session_id == ChatSession.id)
+            .filter(Question.id == question_id, owner.clause(ChatSession))
+            .first()
+        )
         if not q:
             raise HTTPException(status_code=404, detail="Question not found")
 
@@ -96,13 +103,18 @@ def get_question(question_id: str):
 
 
 @router.get("/", response_model=list[QuestionResponse])
-def list_questions(session_id: str | None = Query(None), document_id: str | None = Query(None)):
+def list_questions(
+    session_id: str | None = Query(None),
+    document_id: str | None = Query(None),
+    owner: Owner = Depends(get_owner),
+):
     """List questions, filterable by session_id and/or document_id (the book the session was opened on)."""
     with get_session() as db:
         query = (
             db.query(Question, ChatSession.document_id, Document.filename)
             .join(ChatSession, Question.session_id == ChatSession.id)
             .outerjoin(Document, ChatSession.document_id == Document.id)
+            .filter(owner.clause(ChatSession))
         )
         if session_id:
             query = query.filter(Question.session_id == session_id)

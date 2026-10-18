@@ -41,6 +41,8 @@ export async function request<T>(
   let res: Response;
   try {
     res = await fetch(buildUrl(path, query), {
+      // Sesi login & tamu disimpan backend sebagai cookie httpOnly.
+      credentials: 'include',
       ...rest,
       headers: json !== undefined ? { 'Content-Type': 'application/json', ...headers } : headers,
       body: json !== undefined ? JSON.stringify(json) : init.body,

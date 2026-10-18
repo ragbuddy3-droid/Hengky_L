@@ -16,7 +16,8 @@ from app.main import app
 from app.models.db_models import ChatSession, Document, Question
 from app.services.generation import runner
 
-client = TestClient(app)
+GUEST_ID = "tamu-uji"
+client = TestClient(app, cookies={"soalnya_guest": GUEST_ID})
 
 
 @pytest.fixture
@@ -41,10 +42,10 @@ def db_factory(monkeypatch):
 
 def _seed_session(get_session, filename="buku.pdf") -> tuple[str, str]:
     with get_session() as db:
-        doc = Document(filename=filename, subject="IPAS", status="ready")
+        doc = Document(filename=filename, subject="IPAS", status="ready", guest_id=GUEST_ID)
         db.add(doc)
         db.flush()
-        sess = ChatSession(document_id=doc.id)
+        sess = ChatSession(document_id=doc.id, guest_id=GUEST_ID)
         db.add(sess)
         db.commit()
         return str(doc.id), str(sess.id)

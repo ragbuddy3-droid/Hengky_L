@@ -104,7 +104,7 @@ export function useGenerationStream(sessionId: string, running: boolean): Genera
   useEffect(() => {
     if (!running) return;
     dispatch({ type: 'reset' });
-    const source = new EventSource(chatApi.generationStreamUrl(sessionId));
+    const source = new EventSource(chatApi.generationStreamUrl(sessionId), { withCredentials: true });
     source.onmessage = (message) => {
       const event = JSON.parse(message.data) as GenerationEvent;
       dispatch(event);

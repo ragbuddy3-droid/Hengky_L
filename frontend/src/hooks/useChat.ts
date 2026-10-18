@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { notifications } from '@mantine/notifications';
 import { chatApi } from '@/lib/api/chat';
 import { queryKeys } from '@/lib/query-keys';
 import type { ChatMessage, ChatSessionListItem } from '@/types/chat';
@@ -27,11 +28,33 @@ export function useChatMessages(sessionId: string) {
   return useQuery({ queryKey: queryKeys.messages(sessionId), queryFn: () => chatApi.messages(sessionId) });
 }
 
+const GUEST_TOAST_KEY = 'soalnya:guest-toast-shown';
+
+/** Sekali per browser: ingatkan tamu bahwa riwayatnya sementara. localStorage bisa diblokir, jadi dibungkus try/catch. */
+function showGuestToastOnce() {
+  try {
+    if (localStorage.getItem(GUEST_TOAST_KEY)) return;
+    localStorage.setItem(GUEST_TOAST_KEY, '1');
+  } catch {
+    return;
+  }
+  notifications.show({
+    color: 'accent',
+    title: 'Anda sedang dalam mode tamu',
+    message: 'Riwayat chat hanya tersimpan di browser ini selama 24 jam. Masuk atau daftar untuk menyimpannya.',
+    autoClose: 8000,
+  });
+}
+
 export function useCreateSession() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: chatApi.createSession,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.sessions }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
+      const me = queryClient.getQueryState(queryKeys.me);
+      if (me?.status === 'success' && me.data === null) showGuestToastOnce();
+    },
   });
 }
 

@@ -19,10 +19,27 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    email = Column(String, nullable=False, unique=True, index=True)  # disimpan lowercase
+    name = Column(String, nullable=False)
+    password_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+
+    def __repr__(self) -> str:
+        return f"<User(id={self.id}, email={self.email})>"
+
+
 class Document(Base):
     __tablename__ = "documents"
 
     id = Column(String, primary_key=True, default=generate_uuid)
+    # Pemilik: akun (user_id) atau tamu (guest_id dari cookie browser); keduanya kosong = data lama tanpa pemilik
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    guest_id = Column(String, nullable=True, index=True)
+    last_active_at = Column(DateTime, default=utcnow)
     filename = Column(String, nullable=False)
     filepath = Column(String, nullable=True)
     subject = Column(String, nullable=False)  # PJOK / IPAS / PKN / etc.
@@ -79,6 +96,9 @@ class ChatSession(Base):
 
     id = Column(String, primary_key=True, default=generate_uuid)
     document_id = Column(String, ForeignKey("documents.id"), nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    guest_id = Column(String, nullable=True, index=True)
+    last_active_at = Column(DateTime, default=utcnow)
     # Status generasi soal di latar belakang: idle / running / done / failed
     generation_status = Column(String, nullable=False, default="idle")
     generation_count = Column(Integer, nullable=True)  # Jumlah soal yang diminta pada generasi terakhir

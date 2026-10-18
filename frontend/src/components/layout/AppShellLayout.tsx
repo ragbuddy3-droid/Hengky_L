@@ -7,7 +7,7 @@ import { AppShell, Box, Burger, Button, Divider, Group, NavLink, ScrollArea, Tex
 import { useDisclosure } from '@mantine/hooks';
 import { IconBooks, IconListCheck, IconMessageCircle, IconPlus } from '@tabler/icons-react';
 import { LogoMark } from '@/components/brand/LogoMark';
-import { ColorSchemeToggle } from './ColorSchemeToggle';
+import { AccountMenu } from './AccountMenu';
 import { NavbarSessions } from './NavbarSessions';
 
 const NAV_ITEMS = [
@@ -96,12 +96,7 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
           </AppShell.Section>
 
           <AppShell.Section pt="sm" mt="sm" style={{ borderTop: '1px solid var(--mantine-color-default-border)' }}>
-            <Group justify="space-between">
-              <Text size="xs" c="dimmed">
-                Tema tampilan
-              </Text>
-              <ColorSchemeToggle />
-            </Group>
+            <AccountMenu />
           </AppShell.Section>
         </AppShell.Navbar>
 

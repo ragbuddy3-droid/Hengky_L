@@ -13,11 +13,14 @@ from app.core.config import get_settings
 from app.core.database import get_session, init_db
 from app.core.logging_config import setup_logging
 from app.graph.workflow import get_aqg_graph
+from app.services.auth.data import purge_stale_guest_data
 from app.services.chat.session_store import fail_interrupted_generations
 from app.services.llm import get_chat_model
 from app.services.retrieval.retriever import get_shared_dense_index
 
 logger = logging.getLogger(__name__)
+
+_GUEST_PURGE_INTERVAL = 3600  # seconds
 
 
 def _prewarm_models() -> None:
@@ -29,6 +32,16 @@ def _prewarm_models() -> None:
         logger.info("Embedding and chat models pre-warmed.")
     except Exception as e:
         logger.warning("Model pre-warm failed (will load lazily): %s", e)
+
+
+async def _purge_guest_data_periodically() -> None:
+    """Hapus data tamu yang tidak aktif melewati TTL, saat startup lalu setiap jam."""
+    while True:
+        try:
+            await asyncio.to_thread(purge_stale_guest_data)
+        except Exception as e:
+            logger.warning("Guest data purge failed: %s", e)
+        await asyncio.sleep(_GUEST_PURGE_INTERVAL)
 
 
 @asynccontextmanager
@@ -62,7 +75,10 @@ async def lifespan(app: FastAPI):
     # Load the embedding model now instead of during the first generation request (~30s)
     await asyncio.to_thread(_prewarm_models)
 
+    purge_task = asyncio.create_task(_purge_guest_data_periodically())
+
     yield
+    purge_task.cancel()
     logger.info("Soalnya backend shutting down...")
 
 

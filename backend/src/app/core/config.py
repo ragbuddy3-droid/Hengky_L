@@ -98,6 +98,23 @@ class GenerationConfig(BaseModel):
     max_context_chunks: int = 10  # upper bound of the chunk budget
 
 
+class AuthConfig(BaseModel):
+    jwt_secret: str | None = None  # from .env JWT_SECRET; falls back to a generated secret in data/
+    session_days: int = 7  # login lifetime without "Ingat saya"
+    remember_days: int = 30  # login lifetime with "Ingat saya"
+    guest_ttl_hours: int = 24  # inactive guest data is purged after this
+    session_cookie: str = "soalnya_session"
+    guest_cookie: str = "soalnya_guest"
+    cookie_secure: bool = False  # True when served over HTTPS
+
+    @field_validator("jwt_secret", mode="before")
+    @classmethod
+    def resolve_env_var(cls, v: Any) -> Any:
+        if not v or (isinstance(v, str) and v.startswith("${") and v.endswith("}")):
+            return os.environ.get("JWT_SECRET")
+        return v
+
+
 class ChunkingConfig(BaseModel):
     strategy: str = "fixed"
     fixed_chunk_size: int = 1000
@@ -115,6 +132,7 @@ class Settings(BaseModel):
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
 
     model_config = ConfigDict(extra="ignore")
 

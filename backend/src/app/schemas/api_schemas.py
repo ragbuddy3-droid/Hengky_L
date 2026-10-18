@@ -4,7 +4,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 GenerationStatus = Literal["idle", "running", "done", "failed"]
 
@@ -14,6 +14,63 @@ def as_utc(v: datetime | None) -> datetime | None:
     if isinstance(v, datetime) and v.tzinfo is None:
         return v.replace(tzinfo=UTC)
     return v
+
+
+PASSWORD_MIN_LENGTH = 8
+
+
+def _clean_name(v: str) -> str:
+    v = " ".join(v.split())
+    if not v:
+        raise ValueError("Nama wajib diisi.")
+    return v
+
+
+class RegisterRequest(BaseModel):
+    name: str = Field(max_length=80)
+    email: EmailStr
+    password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=128)
+    remember: bool = False
+
+    @field_validator("name")
+    def clean_name(cls, v: str) -> str:
+        return _clean_name(v)
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=128)
+    remember: bool = False
+
+
+class UserResponse(BaseModel):
+    id: str
+    name: str
+    email: str
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("created_at", mode="after")
+    def ensure_utc(cls, v: datetime | None) -> datetime | None:
+        return as_utc(v)
+
+
+class UpdateProfileRequest(BaseModel):
+    name: str = Field(max_length=80)
+
+    @field_validator("name")
+    def clean_name(cls, v: str) -> str:
+        return _clean_name(v)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=128)
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
 
 
 class DocumentUploadResponse(BaseModel):

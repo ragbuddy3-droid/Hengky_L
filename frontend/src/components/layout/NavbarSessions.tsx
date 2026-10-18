@@ -2,13 +2,40 @@
 
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ActionIcon, Box, Group, Menu, NavLink, Skeleton, Stack, Text } from '@mantine/core';
+import { ActionIcon, Box, Button, Group, Menu, NavLink, Paper, Skeleton, Stack, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconDots, IconMessage, IconTrash } from '@tabler/icons-react';
+import { IconClockHour4, IconDots, IconMessage, IconTrash } from '@tabler/icons-react';
+import { useMe } from '@/hooks/useAuth';
 import { useChatSessions, useDeleteSession } from '@/hooks/useChat';
 import { confirmDelete } from '@/components/common/confirmDelete';
 
+function GuestHistoryBanner() {
+  return (
+    <Paper p="xs" mb="xs" radius="md" withBorder={false} bg="var(--mantine-color-accent-light)">
+      <Group gap={6} align="flex-start" wrap="nowrap">
+        <IconClockHour4 size={16} aria-hidden style={{ flexShrink: 0, marginTop: 2, color: 'var(--app-warning-text)' }} />
+        <Text size="xs" lh={1.4}>
+          Riwayat hanya tersimpan di browser ini selama 24 jam. Masuk untuk menyimpan.
+        </Text>
+      </Group>
+      <Button component={Link} href="/masuk" size="compact-xs" variant="subtle" color="accent.8" mt={4} ml={16}>
+        Masuk
+      </Button>
+    </Paper>
+  );
+}
+
 export function NavbarSessions() {
+  const { isGuest } = useMe();
+  return (
+    <>
+      {isGuest && <GuestHistoryBanner />}
+      <SessionList />
+    </>
+  );
+}
+
+function SessionList() {
   const router = useRouter();
   const params = useParams<{ sessionId?: string }>();
   const { data: sessions, isLoading, isError } = useChatSessions();

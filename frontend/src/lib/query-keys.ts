@@ -1,4 +1,6 @@
 export const queryKeys = {
+  me: ['auth', 'me'] as const,
+
   documents: ['documents'] as const,
   document: (id: string) => ['documents', id] as const,
   documentChunks: (id: string) => ['documents', id, 'chunks'] as const,

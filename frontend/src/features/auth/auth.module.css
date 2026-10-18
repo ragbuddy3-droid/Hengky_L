@@ -1,0 +1,98 @@
+.root {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  background: var(--app-bg);
+}
+
+@media (min-width: $mantine-breakpoint-md) {
+  .root {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+  }
+}
+
+/* Panel brand: hanya tampil mulai md, di mobile diganti logo ringkas di atas form. */
+.brand {
+  display: none;
+  position: relative;
+  overflow: hidden;
+  color: var(--mantine-color-white);
+  background: linear-gradient(155deg, var(--mantine-color-indigo-7) 0%, var(--mantine-color-indigo-9) 100%);
+}
+
+@mixin dark {
+  .brand {
+    background: linear-gradient(155deg, var(--mantine-color-indigo-9) 0%, var(--mantine-color-dark-8) 100%);
+  }
+}
+
+@media (min-width: $mantine-breakpoint-md) {
+  .brand {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: var(--mantine-spacing-xl);
+    padding: rem(48px);
+  }
+}
+
+/* Cahaya amber lembut di pojok, senada dengan percikan logo. */
+.brand::before {
+  content: '';
+  position: absolute;
+  inset: auto -20% -30% auto;
+  width: 70%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(251, 191, 36, 0.22) 0%, transparent 65%);
+  pointer-events: none;
+}
+
+.brand > * {
+  position: relative;
+}
+
+.featureIcon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: rem(36px);
+  height: rem(36px);
+  border-radius: var(--mantine-radius-md);
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--mantine-color-accent-3);
+}
+
+.sample {
+  max-width: rem(380px);
+  padding: var(--mantine-spacing-md);
+  border-radius: var(--mantine-radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(6px);
+}
+
+.formSide {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: rem(72px) var(--mantine-spacing-md) var(--mantine-spacing-xl);
+}
+
+@media (min-width: $mantine-breakpoint-md) {
+  .formSide {
+    padding: rem(48px);
+  }
+}
+
+.formInner {
+  width: 100%;
+  max-width: rem(400px);
+}
+
+.themeToggle {
+  position: absolute;
+  top: var(--mantine-spacing-md);
+  right: var(--mantine-spacing-md);
+}

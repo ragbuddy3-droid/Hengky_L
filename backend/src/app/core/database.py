@@ -58,6 +58,22 @@ def get_session() -> Generator[Session, None, None]:
         db.close()
 
 
+def _add_owner_columns(conn, table: str, existing_cols: set[str]) -> None:
+    """Kolom kepemilikan (akun/tamu) untuk tabel yang dibuat sebelum fitur login."""
+    if "user_id" not in existing_cols:
+        logger.info("Migrating database: adding user_id column to %s table", table)
+        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN user_id VARCHAR REFERENCES users(id) ON DELETE CASCADE;"))
+    if "guest_id" not in existing_cols:
+        logger.info("Migrating database: adding guest_id column to %s table", table)
+        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN guest_id VARCHAR;"))
+    if "last_active_at" not in existing_cols:
+        logger.info("Migrating database: adding last_active_at column to %s table", table)
+        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN last_active_at DATETIME;"))
+    conn.execute(text(f"CREATE INDEX IF NOT EXISTS ix_{table}_user_id ON {table}(user_id);"))
+    conn.execute(text(f"CREATE INDEX IF NOT EXISTS ix_{table}_guest_id ON {table}(guest_id);"))
+    conn.commit()
+
+
 def init_db() -> None:
     """Initialize database tables and run lightweight schema migrations."""
     from app.models.db_models import (  # noqa: F401
@@ -67,6 +83,7 @@ def init_db() -> None:
         ChunkAnalysis,
         Document,
         Question,
+        User,
         ValidationLog,
     )
 
@@ -176,6 +193,8 @@ def init_db() -> None:
                         conn.execute(text("ALTER TABLE documents ADD COLUMN error_message TEXT;"))
                         conn.commit()
 
+                    _add_owner_columns(conn, "documents", existing_doc_cols)
+
                 # Migration for validation_logs table
                 res_val = conn.execute(text("PRAGMA table_info(validation_logs);")).fetchall()
                 existing_val_cols = {row[1] for row in res_val}
@@ -202,6 +221,8 @@ def init_db() -> None:
                         logger.info("Migrating database: adding generation_message_id column to chat_sessions table")
                         conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN generation_message_id VARCHAR;"))
                         conn.commit()
+
+                    _add_owner_columns(conn, "chat_sessions", existing_sess_cols)
 
         except Exception as e:
             logger.warning("Lightweight migration check encountered error (non-fatal): %s", e)

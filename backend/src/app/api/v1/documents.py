@@ -4,18 +4,29 @@ import logging
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile
 
+from app.api.deps import get_owner
 from app.core.database import get_session
 from app.models.db_models import Chunk, Document
 from app.schemas.api_schemas import DocumentStatusResponse, DocumentUploadResponse
-from app.services.ingestion.pipeline import delete_document_vectors, process_document
+from app.services.auth.data import remove_document_files
+from app.services.auth.owner import Owner
+from app.services.ingestion.pipeline import process_document
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 _RAW_DATA_DIR = Path("data/raw")
+_NOT_FOUND = "Dokumen tidak ditemukan"
+
+
+def _owned_document(db, document_id: str, owner: Owner) -> Document:
+    doc = db.query(Document).filter(Document.id == document_id, owner.clause(Document)).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    return doc
 
 
 def _document_response(doc: Document) -> DocumentStatusResponse:
@@ -36,6 +47,7 @@ async def upload_document(
     file: UploadFile,
     subject: str = Form(...),
     chunking_strategy: str = Form("fixed"),
+    owner: Owner = Depends(get_owner),
 ):
     """Upload PDF file with selected chunking strategy."""
     if not file.filename or not file.filename.lower().endswith('.pdf'):
@@ -59,6 +71,7 @@ async def upload_document(
             filename=file.filename,
             filepath=str(file_path),
             chunking_strategy=chunking_strategy,
+            **owner.fields(),
         ))
         db.commit()
 
@@ -67,29 +80,25 @@ async def upload_document(
 
 
 @router.get("/{document_id}", response_model=DocumentStatusResponse)
-def get_document_status(document_id: str):
+def get_document_status(document_id: str, owner: Owner = Depends(get_owner)):
     """Get document status."""
     with get_session() as db:
-        doc = db.query(Document).filter(Document.id == document_id).first()
-        if not doc:
-            raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan")
-        return _document_response(doc)
+        return _document_response(_owned_document(db, document_id, owner))
 
 
 @router.get("/", response_model=list[DocumentStatusResponse])
-def list_documents():
-    """List all documents."""
+def list_documents(owner: Owner = Depends(get_owner)):
+    """List the requester's documents."""
     with get_session() as db:
-        docs = db.query(Document).order_by(Document.uploaded_at.desc()).all()
+        docs = db.query(Document).filter(owner.clause(Document)).order_by(Document.uploaded_at.desc()).all()
         return [_document_response(d) for d in docs]
 
 
 @router.get("/{document_id}/chunks")
-def get_document_chunks(document_id: str):
+def get_document_chunks(document_id: str, owner: Owner = Depends(get_owner)):
     """Get all chunks for a specific document."""
     with get_session() as db:
-        if not db.query(Document.id).filter(Document.id == document_id).first():
-            raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan")
+        _owned_document(db, document_id, owner)
 
         chunks = db.query(Chunk).filter(Chunk.document_id == document_id).order_by(Chunk.created_at).all()
         return [
@@ -108,15 +117,14 @@ def get_document_chunks(document_id: str):
 
 
 @router.delete("/{document_id}")
-def delete_document(document_id: str):
-    """Delete document and associated chunks from SQLite and ChromaDB."""
+def delete_document(document_id: str, owner: Owner = Depends(get_owner)):
+    """Delete document, its chunks and raw file from SQLite, ChromaDB and disk."""
     logger.info("DELETE document: doc_id='%s'", document_id)
     with get_session() as db:
-        doc = db.query(Document).filter(Document.id == document_id).first()
-        if not doc:
-            raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan")
+        doc = _owned_document(db, document_id, owner)
+        filepath = str(doc.filepath) if doc.filepath is not None else None
         db.delete(doc)
         db.commit()
 
-    delete_document_vectors(document_id)
+    remove_document_files([(document_id, filepath)])
     return {"status": "deleted"}
