@@ -25,7 +25,6 @@ export function useSessionGeneration(sessionId: string) {
   const running = status === 'running';
   const progress = useGenerationStream(sessionId, running);
 
-  // Deteksi transisi 'running' → 'done' / 'failed'.
   const previousStatus = useRef<GenerationStatus | undefined>(undefined);
   useEffect(() => {
     const wasRunning = previousStatus.current === 'running';

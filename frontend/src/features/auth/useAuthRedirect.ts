@@ -16,5 +16,4 @@ export function useRedirectIfLoggedIn(next: string) {
   useEffect(() => {
     if (user) router.replace(next);
   }, [user, next, router]);
-  return Boolean(user);
 }

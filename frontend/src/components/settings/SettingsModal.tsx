@@ -22,13 +22,12 @@ import { useMediaQuery } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { IconAlertTriangle, IconLock, IconPalette, IconUser, IconUserX } from '@tabler/icons-react';
 import { MIN_PASSWORD_LENGTH, PasswordStrength } from '@/features/auth/PasswordStrength';
+import { validateName } from '@/features/auth/validators';
 import { useChangePassword, useDeleteAccount, useMe, useUpdateProfile } from '@/hooks/useAuth';
 import { ApiError } from '@/lib/api/client';
 import { formatDate } from '@/lib/format';
-import { DANGER_COLOR } from '@/theme/theme';
+import { DANGER_COLOR, THEME_OPTIONS } from '@/theme/theme';
 import type { User } from '@/types/auth';
-
-export type SettingsTab = 'profil' | 'keamanan' | 'tampilan' | 'akun';
 
 const DELETE_PHRASE = 'HAPUS';
 
@@ -50,7 +49,7 @@ function ProfileTab({ user }: { user: User }) {
   const form = useForm({
     mode: 'uncontrolled',
     initialValues: { name: user.name },
-    validate: { name: (value) => (value.trim().length < 2 ? 'Nama minimal 2 karakter.' : null) },
+    validate: { name: validateName },
   });
 
   const handleSubmit = form.onSubmit(({ name }) =>
@@ -115,8 +114,6 @@ function SecurityTab() {
       }),
   );
 
-  const passwordProps = { visibilityToggleFocusable: true, visibilityToggleButtonProps: { 'aria-label': 'Tampilkan atau sembunyikan password' } };
-
   return (
     <form onSubmit={handleSubmit} noValidate>
       <SectionTitle title="Keamanan" description="Ganti password secara berkala untuk menjaga akun tetap aman." />
@@ -125,7 +122,6 @@ function SecurityTab() {
           label="Password saat ini"
           autoComplete="current-password"
           required
-          {...passwordProps}
           key={form.key('current')}
           {...form.getInputProps('current')}
         />
@@ -133,7 +129,6 @@ function SecurityTab() {
           label="Password baru"
           autoComplete="new-password"
           required
-          {...passwordProps}
           key={form.key('next')}
           {...form.getInputProps('next')}
         />
@@ -142,7 +137,6 @@ function SecurityTab() {
           label="Konfirmasi password baru"
           autoComplete="new-password"
           required
-          {...passwordProps}
           key={form.key('confirm')}
           {...form.getInputProps('confirm')}
         />
@@ -169,11 +163,7 @@ function AppearanceTab() {
         fullWidth
         value={colorScheme}
         onChange={(value) => setColorScheme(value as MantineColorScheme)}
-        data={[
-          { value: 'light', label: 'Terang' },
-          { value: 'dark', label: 'Gelap' },
-          { value: 'auto', label: 'Sistem' },
-        ]}
+        data={THEME_OPTIONS.map(({ value, label }) => ({ value, label }))}
       />
     </div>
   );
@@ -215,8 +205,6 @@ function DeleteAccountTab({ onDeleted }: { onDeleted: () => void }) {
           label="Password"
           autoComplete="current-password"
           required
-          visibilityToggleFocusable
-          visibilityToggleButtonProps={{ 'aria-label': 'Tampilkan atau sembunyikan password' }}
           key={form.key('password')}
           {...form.getInputProps('password')}
         />
@@ -246,20 +234,12 @@ function DeleteAccountTab({ onDeleted }: { onDeleted: () => void }) {
   );
 }
 
-export function SettingsModal({
-  opened,
-  onClose,
-  initialTab = 'profil',
-}: {
-  opened: boolean;
-  onClose: () => void;
-  initialTab?: SettingsTab;
-}) {
+export function SettingsModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
   const router = useRouter();
   const { user } = useMe();
   const isMobile = useMediaQuery('(max-width: 48em)');
   // Tamu hanya punya pengaturan tampilan.
-  const defaultTab = user ? initialTab : 'tampilan';
+  const defaultTab = user ? 'profil' : 'tampilan';
 
   const handleDeleted = () => {
     onClose();

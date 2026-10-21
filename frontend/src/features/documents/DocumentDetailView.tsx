@@ -3,33 +3,21 @@
 import { useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Alert, Button, Paper, SimpleGrid, Skeleton, Stack, Text, Title } from '@mantine/core';
+import { Alert, Button, SimpleGrid, Skeleton, Stack, Text, Title } from '@mantine/core';
 import { IconAlertCircle, IconAlertTriangle, IconFileOff, IconLoader, IconTrash } from '@tabler/icons-react';
 import { DocumentStatusBadge } from '@/components/common/Badges';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageContainer } from '@/components/common/PageContainer';
 import { PageBreadcrumbs, PageHeader } from '@/components/common/PageHeader';
 import { QueryError } from '@/components/common/QueryError';
-import { useDocument, useDocumentChunks } from '@/hooks/useDocuments';
+import { StatTile } from '@/components/common/StatTile';
+import { isProcessing, useDocument, useDocumentChunks } from '@/hooks/useDocuments';
 import { ApiError } from '@/lib/api/client';
 import { formatDate, formatNumber } from '@/lib/format';
 import type { DocumentChunk } from '@/types/document';
 import { ChunkList } from './ChunkList';
 import { GenerateQuestionsButton } from './GenerateQuestionsButton';
 import { useDeleteDocumentAction } from './useDeleteDocumentAction';
-
-function StatTile({ label, value }: { label: string; value: string }) {
-  return (
-    <Paper p="md">
-      <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-        {label}
-      </Text>
-      <Text fz={24} fw={700} mt={4}>
-        {value}
-      </Text>
-    </Paper>
-  );
-}
 
 function ChunkStats({ chunks }: { chunks: DocumentChunk[] }) {
   const stats = useMemo(() => {
@@ -133,7 +121,7 @@ export function DocumentDetailView({ id }: { id: string }) {
         </Alert>
       )}
 
-      {(doc.status === 'pending' || doc.status === 'processing') && (
+      {isProcessing(doc.status) && (
         <Alert color="blue" title="Sedang diproses" icon={<IconLoader size={18} aria-hidden />} mb="lg">
           Buku sedang diekstrak dan dipotong menjadi bagian-bagian kecil. Halaman ini akan diperbarui otomatis.
         </Alert>

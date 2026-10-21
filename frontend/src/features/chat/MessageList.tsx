@@ -124,7 +124,6 @@ export function MessageList({
   const viewport = useRef<HTMLDivElement>(null);
   const count = messages?.length ?? 0;
 
-  // Gulir ke pesan terbaru setiap ada pesan baru.
   useEffect(() => {
     viewport.current?.scrollTo({ top: viewport.current.scrollHeight, behavior: 'smooth' });
   }, [count]);

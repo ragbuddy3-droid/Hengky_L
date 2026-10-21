@@ -1,6 +1,6 @@
 'use client';
 
-import { Box, Tooltip, type BoxProps } from '@mantine/core';
+import { Box, Tooltip } from '@mantine/core';
 
 /** Sama dengan GUEST_LIMIT_MESSAGES di backend (`services/auth/guest_quota.py`). */
 export const GUEST_LIMIT_MESSAGES = {
@@ -17,12 +17,15 @@ export function GuestLimitTooltip({
   kind,
   locked,
   children,
-  ...props
-}: { kind: keyof typeof GUEST_LIMIT_MESSAGES; locked: boolean; children: React.ReactNode } & BoxProps) {
+}: {
+  kind: keyof typeof GUEST_LIMIT_MESSAGES;
+  locked: boolean;
+  children: React.ReactNode;
+}) {
   if (!locked) return children;
   return (
     <Tooltip label={GUEST_LIMIT_MESSAGES[kind]} multiline w={260} withArrow>
-      <Box component="span" display="inline-block" {...props}>
+      <Box component="span" display="inline-block">
         {children}
       </Box>
     </Tooltip>

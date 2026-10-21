@@ -1,21 +1,10 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import {
-  Badge,
-  Card,
-  Group,
-  Highlight,
-  Paper,
-  Select,
-  Skeleton,
-  Spoiler,
-  Stack,
-  Text,
-  TextInput,
-} from '@mantine/core';
+import { Group, Highlight, Paper, Select, Skeleton, Stack, Text, TextInput } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
 import { AppPagination } from '@/components/common/AppPagination';
+import { ChunkCard } from '@/components/common/ChunkCard';
 import { IconSearch } from '@tabler/icons-react';
 import { CHUNK_CATEGORY_LABELS, formatNumber } from '@/lib/format';
 import type { DocumentChunk } from '@/types/document';
@@ -124,38 +113,16 @@ export function ChunkList({ chunks, isLoading }: { chunks: DocumentChunk[] | und
         </Text>
       ) : (
         visible.map((chunk, i) => (
-          <Card key={chunk.id} padding="md">
-            <Group justify="space-between" mb="xs" gap="xs">
-              <Group gap={6}>
-                <Text size="xs" c="dimmed" fw={600}>
-                  #{(currentPage - 1) * PAGE_SIZE + i + 1}
-                </Text>
-                {chunk.chapter && (
-                  <Badge tt="none" maw={260} title={chunk.chapter}>
-                    {chunk.chapter}
-                  </Badge>
-                )}
-                {chunk.category && (
-                  <Badge color="gray" variant="outline">
-                    {CHUNK_CATEGORY_LABELS[chunk.category] ?? chunk.category}
-                  </Badge>
-                )}
-              </Group>
-              <Text size="xs" c="dimmed">
-                {formatNumber(chunk.word_count)} kata
-              </Text>
-            </Group>
-            {chunk.section_heading && (
-              <Text fw={600} size="sm" mb={4}>
-                {chunk.section_heading}
-              </Text>
-            )}
-            <Spoiler maxHeight={96} showLabel="Tampilkan semua" hideLabel="Sembunyikan">
-              <Highlight highlight={debouncedSearch.trim()} size="sm" lh={1.6} style={{ whiteSpace: 'pre-wrap' }}>
-                {chunk.text}
-              </Highlight>
-            </Spoiler>
-          </Card>
+          <ChunkCard
+            key={chunk.id}
+            index={(currentPage - 1) * PAGE_SIZE + i + 1}
+            chunk={chunk}
+            meta={`${formatNumber(chunk.word_count)} kata`}
+          >
+            <Highlight highlight={debouncedSearch.trim()} size="sm" lh={1.6} style={{ whiteSpace: 'pre-wrap' }}>
+              {chunk.text}
+            </Highlight>
+          </ChunkCard>
         ))
       )}
 

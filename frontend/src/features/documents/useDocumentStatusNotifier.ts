@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { notifications } from '@mantine/notifications';
+import { isProcessing } from '@/hooks/useDocuments';
 import type { DocumentItem } from '@/types/document';
 
 /** Tampilkan notifikasi saat status dokumen berpindah dari diproses ke siap/gagal. */
@@ -14,7 +15,7 @@ export function useDocumentStatusNotifier(docs: DocumentItem[] | undefined) {
     if (prev) {
       for (const doc of docs) {
         const before = prev.get(doc.id);
-        if (before === doc.status || (before !== 'pending' && before !== 'processing')) continue;
+        if (before === doc.status || !isProcessing(before)) continue;
         if (doc.status === 'ready' && doc.warning_message) {
           notifications.show({ color: 'yellow', title: 'Buku siap, dengan catatan', message: doc.warning_message });
         } else if (doc.status === 'ready') {

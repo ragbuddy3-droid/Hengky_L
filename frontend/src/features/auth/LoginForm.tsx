@@ -76,8 +76,6 @@ export function LoginForm({ next }: { next?: string }) {
             autoComplete="current-password"
             size="md"
             required
-            visibilityToggleFocusable
-            visibilityToggleButtonProps={{ 'aria-label': 'Tampilkan atau sembunyikan password' }}
             key={form.key('password')}
             {...form.getInputProps('password')}
           />

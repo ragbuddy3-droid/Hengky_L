@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Button, Center, Code, Group } from '@mantine/core';
 import { IconBug, IconRefresh } from '@tabler/icons-react';
 import { EmptyState } from '@/components/common/EmptyState';
+import { FULL_HEIGHT } from '@/components/layout/AppShellLayout';
 
 /** Fallback bila terjadi error tak terduga saat merender halaman (bukan error API biasa). */
 export default function AppError({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
@@ -13,7 +14,7 @@ export default function AppError({ error, retry }: { error: Error & { digest?: s
   }, [error]);
 
   return (
-    <Center mih={{ base: 'calc(100dvh - 56px)', sm: '100dvh' }} p="md">
+    <Center mih={FULL_HEIGHT} p="md">
       <EmptyState
         icon={<IconBug size={24} aria-hidden />}
         title="Terjadi kesalahan pada halaman ini"

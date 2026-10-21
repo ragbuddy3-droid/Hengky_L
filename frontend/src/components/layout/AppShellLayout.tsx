@@ -10,6 +10,11 @@ import { LogoMark } from '@/components/brand/LogoMark';
 import { AccountMenu } from './AccountMenu';
 import { NavbarSessions } from './NavbarSessions';
 
+const HEADER_HEIGHT = 56;
+
+/** Tinggi area konten setinggi layar, dikurangi header yang hanya tampil di mobile. */
+export const FULL_HEIGHT = { base: `calc(100dvh - ${HEADER_HEIGHT}px)`, sm: '100dvh' };
+
 const NAV_ITEMS = [
   { href: '/chat', label: 'Chat', icon: IconMessageCircle },
   { href: '/documents', label: 'Dokumen', icon: IconBooks },
@@ -36,7 +41,6 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [opened, { toggle, close }] = useDisclosure();
 
-  // Tutup drawer navigasi mobile setiap kali pindah halaman.
   useEffect(() => close(), [pathname, close]);
 
   return (
@@ -45,7 +49,7 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
         Lewati ke konten utama
       </a>
       <AppShell
-        header={{ height: { base: 56, sm: 0 } }}
+        header={{ height: { base: HEADER_HEIGHT, sm: 0 } }}
         navbar={{ width: 272, breakpoint: 'sm', collapsed: { mobile: !opened } }}
         padding={0}
       >
@@ -80,7 +84,6 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
                 leftSection={<Icon size={18} stroke={1.75} aria-hidden />}
                 active={pathname.startsWith(href)}
                 variant="light"
-                style={{ borderRadius: 'var(--mantine-radius-md)' }}
                 mb={2}
               />
             ))}

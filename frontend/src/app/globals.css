@@ -2,8 +2,24 @@
   --app-bg: #f8fafc;
 }
 
+/*
+ * Token per skema warna.
+ * dimmed: gray.6 bawaan Mantine hanya 3.2:1 di latar terang — gelapkan agar ≥ 4.5:1.
+ * danger/success/warning: warna teks semantik yang lolos kontras di kedua skema.
+ */
+:root[data-mantine-color-scheme='light'] {
+  --mantine-color-dimmed: var(--mantine-color-gray-7);
+  --app-danger-text: var(--mantine-color-red-9);
+  --app-success-text: #15803d;
+  --app-warning-text: var(--mantine-color-accent-7);
+}
+
 :root[data-mantine-color-scheme='dark'] {
   --app-bg: var(--mantine-color-dark-8);
+  --mantine-color-dimmed: var(--mantine-color-dark-1);
+  --app-danger-text: var(--mantine-color-red-4);
+  --app-success-text: var(--mantine-color-green-4);
+  --app-warning-text: var(--mantine-color-accent-3);
 }
 
 body {
@@ -53,26 +69,6 @@ body {
 }
 .markdown-compact > :first-child {
   margin-top: 0;
-}
-
-/* Teks sekunder: gray.6 bawaan Mantine hanya 3.2:1 di latar terang — gelapkan agar ≥ 4.5:1. */
-:root[data-mantine-color-scheme='light'] {
-  --mantine-color-dimmed: var(--mantine-color-gray-7);
-}
-:root[data-mantine-color-scheme='dark'] {
-  --mantine-color-dimmed: var(--mantine-color-dark-1);
-}
-
-/* Warna teks semantik yang lolos kontras di kedua skema. */
-:root[data-mantine-color-scheme='light'] {
-  --app-danger-text: var(--mantine-color-red-9);
-  --app-success-text: #15803d;
-  --app-warning-text: var(--mantine-color-accent-7);
-}
-:root[data-mantine-color-scheme='dark'] {
-  --app-danger-text: var(--mantine-color-red-4);
-  --app-success-text: var(--mantine-color-green-4);
-  --app-warning-text: var(--mantine-color-accent-3);
 }
 
 .hover-chip {

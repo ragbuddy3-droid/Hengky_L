@@ -1,4 +1,5 @@
-import { createTheme, type MantineColorsTuple } from '@mantine/core';
+import { createTheme, type MantineColorScheme, type MantineColorsTuple } from '@mantine/core';
+import { IconDeviceDesktop, IconMoon, IconSun } from '@tabler/icons-react';
 
 // Palet diambil dari skala Tailwind agar shade 7 (primaryShade) lolos kontras WCAG AA (≥ 4.5:1)
 // untuk teks putih di atas tombol/badge berwarna.
@@ -48,8 +49,22 @@ export const theme = createTheme({
     ActionIcon: { defaultProps: { variant: 'subtle', color: 'gray' } },
     Tooltip: { defaultProps: { withArrow: true, openDelay: 300 } },
     Modal: { defaultProps: { centered: true, radius: 'md' } },
+    NavLink: { styles: { root: { borderRadius: 'var(--mantine-radius-md)' } } },
+    PasswordInput: {
+      defaultProps: {
+        visibilityToggleFocusable: true,
+        visibilityToggleButtonProps: { 'aria-label': 'Tampilkan atau sembunyikan password' },
+      },
+    },
   },
 });
+
+/** Pilihan skema warna di menu akun dan pengaturan tampilan. */
+export const THEME_OPTIONS: { value: MantineColorScheme; label: string; icon: typeof IconSun }[] = [
+  { value: 'light', label: 'Terang', icon: IconSun },
+  { value: 'dark', label: 'Gelap', icon: IconMoon },
+  { value: 'auto', label: 'Sistem', icon: IconDeviceDesktop },
+];
 
 /**
  * Warna badge per level Bloom. Soalnya untuk SD, jadi hanya C1–C4 (sama dengan backend).

@@ -1,9 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { Alert, Badge, Button, Group, List, Paper, Skeleton, Stack, Tabs, Text, Title } from '@mantine/core';
+import { Badge, Button, Group, Paper, Skeleton, Stack, Tabs, Text, Title } from '@mantine/core';
 import {
-  IconAlertTriangle,
   IconBook2,
   IconFileSearch,
   IconListCheck,
@@ -17,6 +16,7 @@ import { CopyTextButton } from '@/components/common/CopyTextButton';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageContainer } from '@/components/common/PageContainer';
 import { PageBreadcrumbs, PageHeader } from '@/components/common/PageHeader';
+import { QualityWarningsAlert } from '@/components/common/QualityWarningsAlert';
 import { QueryError } from '@/components/common/QueryError';
 import { useQuestion } from '@/hooks/useQuestions';
 import { ApiError } from '@/lib/api/client';
@@ -76,8 +76,6 @@ export function QuestionDetailView({ id }: { id: string }) {
     );
   }
 
-  const warnings = question.quality_warnings ?? [];
-
   return (
     <PageContainer>
       <PageHeader
@@ -123,15 +121,7 @@ export function QuestionDetailView({ id }: { id: string }) {
           )}
         </Paper>
 
-        {warnings.length > 0 && (
-          <Alert color="orange" icon={<IconAlertTriangle size={18} aria-hidden />} title="Catatan kualitas">
-            <List size="sm">
-              {warnings.map((w) => (
-                <List.Item key={w}>{w}</List.Item>
-              ))}
-            </List>
-          </Alert>
-        )}
+        <QualityWarningsAlert warnings={question.quality_warnings} />
       </Stack>
 
       <Tabs defaultValue="answer" keepMounted={false}>

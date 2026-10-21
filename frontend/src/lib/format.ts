@@ -18,6 +18,11 @@ export const QUESTION_TYPE_LABELS: Record<string, string> = {
   isian_singkat: 'Isian Singkat',
 };
 
+export const QUESTION_STATUS_LABELS: Record<string, string> = {
+  final: 'Final',
+  needs_review: 'Perlu Tinjauan',
+};
+
 export const CHUNK_CATEGORY_LABELS: Record<string, string> = {
   materi_pokok: 'Materi Pokok',
   uraian_materi: 'Uraian Materi',

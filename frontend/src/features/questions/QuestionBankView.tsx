@@ -22,7 +22,7 @@ import { PageContainer } from '@/components/common/PageContainer';
 import { PageHeader } from '@/components/common/PageHeader';
 import { QueryError } from '@/components/common/QueryError';
 import { useQuestions } from '@/hooks/useQuestions';
-import { bloomCode, formatNumber, QUESTION_TYPE_LABELS } from '@/lib/format';
+import { bloomCode, formatNumber, QUESTION_STATUS_LABELS, QUESTION_TYPE_LABELS } from '@/lib/format';
 import { BLOOM_LEVELS } from '@/theme/theme';
 import { ExportMenu } from './ExportMenu';
 import { QuestionCard } from './QuestionCard';
@@ -178,8 +178,8 @@ export function QuestionBankView() {
                 }}
                 data={[
                   { value: 'all', label: 'Semua' },
-                  { value: 'final', label: 'Final' },
-                  { value: 'needs_review', label: 'Perlu Tinjauan' },
+                  { value: 'final', label: QUESTION_STATUS_LABELS.final },
+                  { value: 'needs_review', label: QUESTION_STATUS_LABELS.needs_review },
                 ]}
               />
               {hasFilters && (

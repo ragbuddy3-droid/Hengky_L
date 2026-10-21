@@ -12,6 +12,7 @@ import { ApiError } from '@/lib/api/client';
 import { useRegister } from '@/hooks/useAuth';
 import { MIN_PASSWORD_LENGTH, PasswordStrength } from './PasswordStrength';
 import { safeNext, useRedirectIfLoggedIn } from './useAuthRedirect';
+import { validateName } from './validators';
 
 export function RegisterForm({ next }: { next?: string }) {
   const router = useRouter();
@@ -24,7 +25,7 @@ export function RegisterForm({ next }: { next?: string }) {
     mode: 'uncontrolled',
     initialValues: { name: '', email: '', password: '', confirmPassword: '', remember: false },
     validate: {
-      name: (value) => (value.trim().length < 2 ? 'Nama minimal 2 karakter.' : null),
+      name: validateName,
       email: isEmail('Masukkan alamat email yang valid.'),
       password: hasLength({ min: MIN_PASSWORD_LENGTH }, `Password minimal ${MIN_PASSWORD_LENGTH} karakter.`),
       confirmPassword: matchesField('password', 'Konfirmasi password tidak sama.'),
@@ -97,8 +98,6 @@ export function RegisterForm({ next }: { next?: string }) {
             autoComplete="new-password"
             size="md"
             required
-            visibilityToggleFocusable
-            visibilityToggleButtonProps={{ 'aria-label': 'Tampilkan atau sembunyikan password' }}
             key={form.key('password')}
             {...form.getInputProps('password')}
           />
@@ -109,7 +108,6 @@ export function RegisterForm({ next }: { next?: string }) {
             autoComplete="new-password"
             size="md"
             required
-            visibilityToggleFocusable
             visibilityToggleButtonProps={{ 'aria-label': 'Tampilkan atau sembunyikan konfirmasi password' }}
             key={form.key('confirmPassword')}
             {...form.getInputProps('confirmPassword')}

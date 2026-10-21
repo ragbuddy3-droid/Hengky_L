@@ -10,7 +10,7 @@ import { PageContainer } from '@/components/common/PageContainer';
 import { PageHeader } from '@/components/common/PageHeader';
 import { QueryError } from '@/components/common/QueryError';
 import { useGuestQuota } from '@/hooks/useAuth';
-import { useDocuments } from '@/hooks/useDocuments';
+import { isProcessing, useDocuments } from '@/hooks/useDocuments';
 import { DocumentCard } from './DocumentCard';
 import { UploadDocumentModal } from './UploadDocumentModal';
 import { useDeleteDocumentAction } from './useDeleteDocumentAction';
@@ -33,7 +33,7 @@ export function DocumentsView() {
       const matchesText = !q || d.filename.toLowerCase().includes(q) || d.subject.toLowerCase().includes(q);
       const matchesStatus =
         statusFilter === 'all' ||
-        (statusFilter === 'processing' ? d.status === 'pending' || d.status === 'processing' : d.status === statusFilter);
+        (statusFilter === 'processing' ? isProcessing(d.status) : d.status === statusFilter);
       return matchesText && matchesStatus;
     });
   }, [docs, search, statusFilter]);

@@ -10,17 +10,15 @@ export function useChatSessions() {
   return useQuery({ queryKey: queryKeys.sessions, queryFn: () => chatApi.listSessions() });
 }
 
-type PollInterval = number | false;
-
-/** `pollMs` bisa berupa fungsi dari data sesi terbaru, untuk polling bersyarat. */
+/** `pollMs` menerima data sesi terbaru, untuk polling bersyarat. */
 export function useChatSession(
   sessionId: string,
-  pollMs: PollInterval | ((session: ChatSessionListItem | undefined) => PollInterval) = false,
+  pollMs: (session: ChatSessionListItem | undefined) => number | false = () => false,
 ) {
   return useQuery({
     queryKey: queryKeys.session(sessionId),
     queryFn: () => chatApi.getSession(sessionId),
-    refetchInterval: typeof pollMs === 'function' ? (query) => pollMs(query.state.data) : pollMs,
+    refetchInterval: (query) => pollMs(query.state.data),
   });
 }
 

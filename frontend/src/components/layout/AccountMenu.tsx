@@ -16,28 +16,13 @@ import {
   Tooltip,
   UnstyledButton,
   useMantineColorScheme,
-  type MantineColorScheme,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import {
-  IconCheck,
-  IconDeviceDesktop,
-  IconLogout,
-  IconMoon,
-  IconSelector,
-  IconSettings,
-  IconSun,
-  IconUserCircle,
-} from '@tabler/icons-react';
+import { IconCheck, IconLogout, IconSelector, IconSettings, IconUserCircle } from '@tabler/icons-react';
 import { SettingsModal } from '@/components/settings/SettingsModal';
 import { useLogout, useMe } from '@/hooks/useAuth';
+import { THEME_OPTIONS } from '@/theme/theme';
 import type { User } from '@/types/auth';
-
-const THEME_OPTIONS: { value: MantineColorScheme; label: string; icon: typeof IconSun }[] = [
-  { value: 'light', label: 'Terang', icon: IconSun },
-  { value: 'dark', label: 'Gelap', icon: IconMoon },
-  { value: 'auto', label: 'Sistem', icon: IconDeviceDesktop },
-];
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);

@@ -1,6 +1,7 @@
 import { Badge, Loader } from '@mantine/core';
 import { BLOOM_COLORS } from '@/theme/theme';
-import { bloomCode, QUESTION_TYPE_LABELS } from '@/lib/format';
+import { isProcessing } from '@/hooks/useDocuments';
+import { bloomCode, QUESTION_STATUS_LABELS, QUESTION_TYPE_LABELS } from '@/lib/format';
 
 export function BloomBadge({ level, size = 'sm' }: { level?: string | null; size?: string }) {
   const code = bloomCode(level);
@@ -20,7 +21,7 @@ const DOC_STATUS: Record<string, { color: string; label: string }> = {
 
 export function DocumentStatusBadge({ status }: { status: string }) {
   const meta = DOC_STATUS[status] ?? { color: 'gray', label: status };
-  const busy = status === 'pending' || status === 'processing';
+  const busy = isProcessing(status);
   return (
     <Badge
       color={meta.color}
@@ -32,16 +33,12 @@ export function DocumentStatusBadge({ status }: { status: string }) {
   );
 }
 
-const QUESTION_STATUS: Record<string, { color: string; label: string }> = {
-  final: { color: 'green', label: 'Final' },
-  needs_review: { color: 'orange', label: 'Perlu Tinjauan' },
-};
+const QUESTION_STATUS_COLORS: Record<string, string> = { final: 'green', needs_review: 'orange' };
 
 export function QuestionStatusBadge({ status }: { status: string }) {
-  const meta = QUESTION_STATUS[status] ?? { color: 'gray', label: status };
   return (
-    <Badge color={meta.color} variant="dot">
-      {meta.label}
+    <Badge color={QUESTION_STATUS_COLORS[status] ?? 'gray'} variant="dot">
+      {QUESTION_STATUS_LABELS[status] ?? status}
     </Badge>
   );
 }

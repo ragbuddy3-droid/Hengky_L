@@ -7,7 +7,7 @@ export const QUESTION_PROMPTS = [
   'Soal nomor 1 terlalu mudah',
 ];
 
-/** Susun kalimat permintaan yang dipahami parser backend (`_parse_generation_params`). */
+/** Susun kalimat permintaan yang dipahami parser backend (`parse_generation_params`). */
 export function buildGenerationPrompt({
   count,
   bloom,

@@ -2,27 +2,10 @@
 
 import { useMemo } from 'react';
 import { Group, Paper, Progress, SimpleGrid, Stack, Text, Tooltip } from '@mantine/core';
+import { StatTile } from '@/components/common/StatTile';
 import { BLOOM_COLORS, BLOOM_LEVELS, colorVar } from '@/theme/theme';
 import { bloomCode, formatNumber } from '@/lib/format';
 import type { Question } from '@/types/question';
-
-function StatTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <Paper p="md">
-      <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-        {label}
-      </Text>
-      <Text fz={24} fw={700} mt={4}>
-        {value}
-      </Text>
-      {hint && (
-        <Text size="xs" c="dimmed">
-          {hint}
-        </Text>
-      )}
-    </Paper>
-  );
-}
 
 export function QuestionStats({ questions }: { questions: Question[] }) {
   const stats = useMemo(() => {

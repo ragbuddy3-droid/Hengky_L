@@ -3,11 +3,10 @@
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { ActionIcon, Box, Button, Group, Menu, NavLink, Paper, Skeleton, Stack, Text } from '@mantine/core';
-import { notifications } from '@mantine/notifications';
 import { IconClockHour4, IconDots, IconMessage, IconTrash } from '@tabler/icons-react';
 import { useMe } from '@/hooks/useAuth';
-import { useChatSessions, useDeleteSession } from '@/hooks/useChat';
-import { confirmDelete } from '@/components/common/confirmDelete';
+import { useChatSessions } from '@/hooks/useChat';
+import { useDeleteSessionAction } from '@/features/chat/useDeleteSessionAction';
 
 function GuestHistoryBanner() {
   return (
@@ -39,21 +38,9 @@ function SessionList() {
   const router = useRouter();
   const params = useParams<{ sessionId?: string }>();
   const { data: sessions, isLoading, isError } = useChatSessions();
-  const deleteSession = useDeleteSession();
-
-  const handleDelete = (id: string) =>
-    confirmDelete({
-      title: 'Hapus sesi chat?',
-      message: 'Riwayat percakapan sesi ini akan dihapus.',
-      onConfirm: () =>
-        deleteSession.mutate(id, {
-          onSuccess: () => {
-            notifications.show({ color: 'green', message: 'Sesi chat dihapus.' });
-            if (params.sessionId === id) router.push('/chat');
-          },
-          onError: (err) => notifications.show({ color: 'red', title: 'Gagal menghapus', message: err.message }),
-        }),
-    });
+  const handleDelete = useDeleteSessionAction((id) => {
+    if (params.sessionId === id) router.push('/chat');
+  });
 
   if (isLoading) {
     return (
@@ -101,7 +88,6 @@ function SessionList() {
                 {session.document_filename ?? 'Dokumen'}
               </Text>
             }
-            style={{ borderRadius: 'var(--mantine-radius-md)' }}
             pr={36}
           />
           <Box pos="absolute" right={4}>

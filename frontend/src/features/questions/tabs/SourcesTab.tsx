@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { Anchor, Badge, Blockquote, Card, Group, Spoiler, Stack, Text } from '@mantine/core';
-import { CHUNK_CATEGORY_LABELS } from '@/lib/format';
+import { Anchor, Blockquote, Stack, Text } from '@mantine/core';
+import { ChunkCard } from '@/components/common/ChunkCard';
 import type { QuestionDetail } from '@/types/question';
 import { Section } from '../Section';
 
@@ -30,40 +30,11 @@ export function SourcesTab({ question }: { question: QuestionDetail }) {
         ) : (
           <Stack gap="sm" mt="xs">
             {chunks.map((c, i) => (
-              <Card key={c.id} padding="md">
-                <Group justify="space-between" gap="xs" mb="xs">
-                  <Group gap={6}>
-                    <Text size="xs" fw={700} c="dimmed">
-                      #{i + 1}
-                    </Text>
-                    {c.chapter && (
-                      <Badge tt="none">
-                        {c.chapter}
-                      </Badge>
-                    )}
-                    {c.category && (
-                      <Badge color="gray" variant="outline">
-                        {CHUNK_CATEGORY_LABELS[c.category] ?? c.category}
-                      </Badge>
-                    )}
-                  </Group>
-                  {c.page_number != null && (
-                    <Text size="xs" c="dimmed">
-                      Hal. {c.page_number}
-                    </Text>
-                  )}
-                </Group>
-                {c.section_heading && (
-                  <Text fw={600} size="sm" mb={4}>
-                    {c.section_heading}
-                  </Text>
-                )}
-                <Spoiler maxHeight={96} showLabel="Tampilkan semua" hideLabel="Sembunyikan">
-                  <Text size="sm" lh={1.6} style={{ whiteSpace: 'pre-wrap' }}>
-                    {c.text.trim()}
-                  </Text>
-                </Spoiler>
-              </Card>
+              <ChunkCard key={c.id} index={i + 1} chunk={c} meta={c.page_number != null ? `Hal. ${c.page_number}` : null}>
+                <Text size="sm" lh={1.6} style={{ whiteSpace: 'pre-wrap' }}>
+                  {c.text.trim()}
+                </Text>
+              </ChunkCard>
             ))}
             {documentId && (
               <Anchor component={Link} href={`/documents/${documentId}`} size="sm">

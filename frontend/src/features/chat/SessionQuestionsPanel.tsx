@@ -8,7 +8,7 @@ import { QueryError } from '@/components/common/QueryError';
 import { ExportMenu } from '@/features/questions/ExportMenu';
 import { QuestionPreviewDrawer } from '@/features/questions/QuestionPreviewDrawer';
 import { useQuestions } from '@/hooks/useQuestions';
-import { QUESTION_TYPE_LABELS } from '@/lib/format';
+import { QUESTION_STATUS_LABELS, QUESTION_TYPE_LABELS } from '@/lib/format';
 import type { CandidateStatus } from '@/types/chat';
 import type { Question } from '@/types/question';
 import type { GenerationProgress, StreamCandidate } from './useGenerationStream';
@@ -50,7 +50,7 @@ const CANDIDATE_STATUS: Record<CandidateStatus, { color: string; label: string; 
   validating: { color: 'cyan', label: 'Memvalidasi', busy: true },
   refining: { color: 'yellow', label: 'Memperbaiki', busy: true },
   final: { color: 'green', label: 'Lolos', busy: false },
-  needs_review: { color: 'orange', label: 'Perlu Tinjauan', busy: false },
+  needs_review: { color: 'orange', label: QUESTION_STATUS_LABELS.needs_review, busy: false },
   dropped: { color: 'gray', label: 'Dibatalkan', busy: false },
 };
 
@@ -125,7 +125,6 @@ export function SessionQuestionsPanel({
 }) {
   const { data, isLoading, error, refetch } = useQuestions(sessionId);
   const [selected, setSelected] = useState<Question | null>(null);
-  // Urutan dari API sudah sama dengan penomoran di pesan ringkasan chat.
   const questions = data ?? [];
   const finalCount = questions.filter((q) => q.status === 'final').length;
   const generating = pendingCount > 0 || progress !== null;

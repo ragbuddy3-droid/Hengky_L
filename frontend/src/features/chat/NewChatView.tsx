@@ -2,35 +2,29 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { PAGE_TITLE_FZ } from '@/components/common/PageHeader';
 import { Button, Center, Group, Paper, Select, Skeleton, Stack, Text, Title } from '@mantine/core';
-import { notifications } from '@mantine/notifications';
 import { IconBooks, IconLock, IconSparkles } from '@tabler/icons-react';
 import { LogoMark } from '@/components/brand/LogoMark';
 import { EmptyState } from '@/components/common/EmptyState';
 import { GUEST_LIMIT_MESSAGES } from '@/components/common/GuestLimitTooltip';
 import { QueryError } from '@/components/common/QueryError';
+import { FULL_HEIGHT } from '@/components/layout/AppShellLayout';
 import { useGuestQuota } from '@/hooks/useAuth';
-import { useCreateSession } from '@/hooks/useChat';
 import { useDocuments } from '@/hooks/useDocuments';
 import { EXAMPLE_PROMPTS } from './prompts';
+import { useCreateSessionAction } from './useCreateSessionAction';
 
 export function NewChatView() {
-  const router = useRouter();
   const { data: docs, isLoading, error, refetch } = useDocuments();
-  const createSession = useCreateSession();
+  const createSession = useCreateSessionAction();
   const { canCreateSession } = useGuestQuota();
   const readyDocs = (docs ?? []).filter((d) => d.status === 'ready');
   const [documentId, setDocumentId] = useState<string | null>(null);
   const selected = documentId ?? (readyDocs.length === 1 ? readyDocs[0].id : null);
 
   const start = () => {
-    if (!selected) return;
-    createSession.mutate(selected, {
-      onSuccess: (session) => router.push(`/chat/${session.id}`),
-      onError: (err) => notifications.show({ color: 'red', title: 'Gagal membuat sesi', message: err.message }),
-    });
+    if (selected) createSession.start(selected);
   };
 
   let body: React.ReactNode;
@@ -99,7 +93,7 @@ export function NewChatView() {
   }
 
   return (
-    <Center mih={{ base: 'calc(100dvh - 56px)', sm: '100dvh' }} p="md">
+    <Center mih={FULL_HEIGHT} p="md">
       <Stack w="100%" maw={560} gap="lg">
         <Stack align="center" gap="xs" ta="center">
           <LogoMark size={56} />

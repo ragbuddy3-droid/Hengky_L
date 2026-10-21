@@ -7,19 +7,19 @@ import { ActionIcon, Alert, Anchor, Badge, Box, Button, Center, Drawer, Group, M
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { IconBook2, IconClockExclamation, IconDots, IconListCheck, IconMessageOff, IconTrash } from '@tabler/icons-react';
-import { confirmDelete } from '@/components/common/confirmDelete';
 import { EmptyState } from '@/components/common/EmptyState';
 import { QueryError } from '@/components/common/QueryError';
-import { useDeleteSession, useSendMessage } from '@/hooks/useChat';
+import { FULL_HEIGHT } from '@/components/layout/AppShellLayout';
+import { useSendMessage } from '@/hooks/useChat';
 import { useQuestions } from '@/hooks/useQuestions';
 import { ApiError } from '@/lib/api/client';
 import { Composer } from './Composer';
 import { MessageList } from './MessageList';
 import { SessionQuestionsPanel } from './SessionQuestionsPanel';
+import { useDeleteSessionAction } from './useDeleteSessionAction';
 import { useSessionGeneration } from './useSessionGeneration';
 
 const PANEL_WIDTH = 380;
-const FULL_HEIGHT = { base: 'calc(100dvh - 56px)', sm: '100dvh' };
 
 export function ChatSessionView({ sessionId }: { sessionId: string }) {
   const router = useRouter();
@@ -29,7 +29,7 @@ export function ChatSessionView({ sessionId }: { sessionId: string }) {
   const { sessionQuery, messagesQuery, pending, progress, unreachable } = useSessionGeneration(sessionId);
   const session = sessionQuery.data;
   const sendMessage = useSendMessage(sessionId);
-  const deleteSession = useDeleteSession();
+  const deleteSession = useDeleteSessionAction(() => router.push('/chat'));
   const questionCount = useQuestions(sessionId).data?.length ?? 0;
 
   const send = (text: string) => {
@@ -41,17 +41,6 @@ export function ChatSessionView({ sessionId }: { sessionId: string }) {
       },
     });
   };
-
-  const handleDelete = () =>
-    confirmDelete({
-      title: 'Hapus sesi chat?',
-      message: 'Riwayat percakapan sesi ini akan dihapus.',
-      onConfirm: () =>
-        deleteSession.mutate(sessionId, {
-          onSuccess: () => router.push('/chat'),
-          onError: (err) => notifications.show({ color: 'red', title: 'Gagal menghapus', message: err.message }),
-        }),
-    });
 
   if (sessionQuery.error instanceof ApiError && sessionQuery.error.status === 404) {
     return (
@@ -120,7 +109,7 @@ export function ChatSessionView({ sessionId }: { sessionId: string }) {
                 </ActionIcon>
               </Menu.Target>
               <Menu.Dropdown>
-                <Menu.Item color="red" leftSection={<IconTrash size={14} aria-hidden />} onClick={handleDelete}>
+                <Menu.Item color="red" leftSection={<IconTrash size={14} aria-hidden />} onClick={() => deleteSession(sessionId)}>
                   Hapus sesi
                 </Menu.Item>
               </Menu.Dropdown>

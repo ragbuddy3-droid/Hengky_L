@@ -1,10 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { Alert, Button, Divider, Drawer, Group, List, Stack, Text, Title } from '@mantine/core';
-import { IconAlertTriangle, IconArrowRight } from '@tabler/icons-react';
+import { Button, Divider, Drawer, Group, Stack, Text, Title } from '@mantine/core';
+import { IconArrowRight } from '@tabler/icons-react';
 import { BloomBadge, QuestionStatusBadge, QuestionTypeBadge } from '@/components/common/Badges';
 import { CopyTextButton } from '@/components/common/CopyTextButton';
+import { QualityWarningsAlert } from '@/components/common/QualityWarningsAlert';
 import type { Question } from '@/types/question';
 import { Section } from './Section';
 
@@ -37,15 +38,7 @@ export function QuestionPreviewDrawer({ question, onClose }: { question: Questio
             <CopyTextButton value={question.question_text} label="Salin soal" />
           </Group>
 
-          {!!question.quality_warnings?.length && (
-            <Alert color="orange" variant="light" icon={<IconAlertTriangle size={18} aria-hidden />} title="Catatan kualitas">
-              <List size="sm">
-                {question.quality_warnings.map((w) => (
-                  <List.Item key={w}>{w}</List.Item>
-                ))}
-              </List>
-            </Alert>
-          )}
+          <QualityWarningsAlert warnings={question.quality_warnings} />
 
           <Divider />
 

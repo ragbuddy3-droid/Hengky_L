@@ -1,7 +1,5 @@
 import type { Question } from '@/types/question';
-import { QUESTION_TYPE_LABELS } from './format';
-
-const STATUS_LABELS: Record<string, string> = { final: 'Final', needs_review: 'Perlu Tinjauan' };
+import { QUESTION_STATUS_LABELS, QUESTION_TYPE_LABELS } from './format';
 
 export interface ExportOptions {
   title: string;
@@ -13,7 +11,7 @@ function questionBlock(q: Question, index: number, includeAnswers: boolean) {
   const meta = [
     `**Tipe:** ${QUESTION_TYPE_LABELS[q.question_type] ?? q.question_type}`,
     `**Level:** ${q.bloom_level}`,
-    includeAnswers ? `**Status:** ${STATUS_LABELS[q.status] ?? q.status}` : null,
+    includeAnswers ? `**Status:** ${QUESTION_STATUS_LABELS[q.status] ?? q.status}` : null,
   ]
     .filter(Boolean)
     .join(' · ');
