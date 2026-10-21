@@ -11,6 +11,7 @@ from app.core.database import get_session
 from app.models.db_models import Chunk, Document
 from app.schemas.api_schemas import DocumentStatusResponse, DocumentUploadResponse
 from app.services.auth.data import remove_document_files
+from app.services.auth.guest_quota import GUEST_LIMIT_MESSAGES, can_use, consume
 from app.services.auth.owner import Owner
 from app.services.ingestion.pipeline import process_document
 
@@ -53,6 +54,9 @@ async def upload_document(
     if not file.filename or not file.filename.lower().endswith('.pdf'):
         logger.warning("Upload rejected: non-PDF file '%s'", file.filename)
         raise HTTPException(status_code=400, detail="Hanya file dengan ekstensi .pdf yang didukung.")
+    with get_session() as db:
+        if not can_use(db, owner, "upload"):
+            raise HTTPException(status_code=403, detail=GUEST_LIMIT_MESSAGES["upload"])
 
     doc_id = str(uuid.uuid4())
     _RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -73,6 +77,7 @@ async def upload_document(
             chunking_strategy=chunking_strategy,
             **owner.fields(),
         ))
+        consume(db, owner, "upload")
         db.commit()
 
     background_tasks.add_task(process_document, doc_id, str(file_path), chunking_strategy)

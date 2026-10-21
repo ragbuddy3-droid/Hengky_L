@@ -5,19 +5,22 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import clear_cookie, require_user, set_cookie
+from app.api.deps import clear_cookie, get_owner, require_user, set_cookie
 from app.core.config import get_settings
 from app.core.database import get_session
 from app.models.db_models import User
 from app.schemas.api_schemas import (
     ChangePasswordRequest,
     DeleteAccountRequest,
+    GuestQuotaResponse,
     LoginRequest,
     RegisterRequest,
     UpdateProfileRequest,
     UserResponse,
 )
 from app.services.auth.data import claim_guest_data, claim_legacy_data, delete_user_account, is_first_user
+from app.services.auth.guest_quota import get_quota
+from app.services.auth.owner import Owner
 from app.services.auth.security import create_access_token, hash_password, session_lifetime, verify_password
 
 logger = logging.getLogger(__name__)
@@ -80,6 +83,12 @@ def logout(response: Response):
 def me(user_id: str = Depends(require_user)):
     with get_session() as db:
         return UserResponse.model_validate(db.get(User, user_id))
+
+
+@router.get("/quota", response_model=GuestQuotaResponse)
+def quota(owner: Owner = Depends(get_owner)):
+    with get_session() as db:
+        return GuestQuotaResponse(**get_quota(db, owner))
 
 
 @router.patch("/me", response_model=UserResponse)

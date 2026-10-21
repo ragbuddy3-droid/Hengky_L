@@ -6,10 +6,12 @@ import { useRouter } from 'next/navigation';
 import { PAGE_TITLE_FZ } from '@/components/common/PageHeader';
 import { Button, Center, Group, Paper, Select, Skeleton, Stack, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconBooks, IconSparkles } from '@tabler/icons-react';
+import { IconBooks, IconLock, IconSparkles } from '@tabler/icons-react';
 import { LogoMark } from '@/components/brand/LogoMark';
 import { EmptyState } from '@/components/common/EmptyState';
+import { GUEST_LIMIT_MESSAGES } from '@/components/common/GuestLimitTooltip';
 import { QueryError } from '@/components/common/QueryError';
+import { useGuestQuota } from '@/hooks/useAuth';
 import { useCreateSession } from '@/hooks/useChat';
 import { useDocuments } from '@/hooks/useDocuments';
 import { EXAMPLE_PROMPTS } from './prompts';
@@ -18,6 +20,7 @@ export function NewChatView() {
   const router = useRouter();
   const { data: docs, isLoading, error, refetch } = useDocuments();
   const createSession = useCreateSession();
+  const { canCreateSession } = useGuestQuota();
   const readyDocs = (docs ?? []).filter((d) => d.status === 'ready');
   const [documentId, setDocumentId] = useState<string | null>(null);
   const selected = documentId ?? (readyDocs.length === 1 ? readyDocs[0].id : null);
@@ -35,6 +38,19 @@ export function NewChatView() {
     body = <Skeleton h={140} radius="md" />;
   } else if (error) {
     body = <QueryError error={error} onRetry={() => refetch()} />;
+  } else if (!canCreateSession) {
+    body = (
+      <EmptyState
+        icon={<IconLock size={24} aria-hidden />}
+        title="Batas mode tamu tercapai"
+        description={GUEST_LIMIT_MESSAGES.session}
+        action={
+          <Button component={Link} href="/login">
+            Masuk
+          </Button>
+        }
+      />
+    );
   } else if (!readyDocs.length) {
     body = (
       <EmptyState

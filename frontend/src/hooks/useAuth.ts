@@ -12,6 +12,16 @@ export function useMe() {
   return { ...query, user, isGuest: !query.isPending && !user };
 }
 
+/** Sisa kuota mode tamu. Selama belum termuat semuanya dianggap boleh; backend tetap menegakkan batasnya. */
+export function useGuestQuota() {
+  const { data } = useQuery({ queryKey: queryKeys.quota, queryFn: authApi.quota, staleTime: 30_000 });
+  return {
+    canUpload: data?.can_upload ?? true,
+    canCreateSession: data?.can_create_session ?? true,
+    canGenerate: data?.can_generate ?? true,
+  };
+}
+
 /**
  * Ganti identitas (login/daftar/keluar/hapus akun): simpan user baru lalu reset semua data lain,
  * karena dokumen, chat, dan bank soal kini milik pemilik sesi yang berbeda.

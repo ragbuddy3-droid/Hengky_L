@@ -36,7 +36,10 @@ export function useUploadDocument() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: UploadDocumentInput) => documentsApi.upload(input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.documents }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.documents });
+      queryClient.invalidateQueries({ queryKey: queryKeys.quota });
+    },
   });
 }
 

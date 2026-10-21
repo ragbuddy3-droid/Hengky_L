@@ -32,6 +32,17 @@ class User(Base):
         return f"<User(id={self.id}, email={self.email})>"
 
 
+class GuestUsage(Base):
+    """Kuota sekali pakai mode tamu. Tidak ikut dihapus bersama data tamu agar kuota tidak kembali."""
+
+    __tablename__ = "guest_usage"
+
+    guest_id = Column(String, primary_key=True)
+    uploaded_at = Column(DateTime, nullable=True)
+    session_created_at = Column(DateTime, nullable=True)
+    generated_at = Column(DateTime, nullable=True)
+
+
 class Document(Base):
     __tablename__ = "documents"
 

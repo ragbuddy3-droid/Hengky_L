@@ -52,6 +52,7 @@ export function useCreateSession() {
     mutationFn: chatApi.createSession,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
+      queryClient.invalidateQueries({ queryKey: queryKeys.quota });
       const me = queryClient.getQueryState(queryKeys.me);
       if (me?.status === 'success' && me.data === null) showGuestToastOnce();
     },
@@ -86,6 +87,7 @@ export function useSendMessage(sessionId: string) {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: key });
       queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
+      queryClient.invalidateQueries({ queryKey: queryKeys.quota });
     },
   });
 }

@@ -8,6 +8,7 @@ from app.graph.state import AQGState
 from app.graph.workflow import get_aqg_graph
 from app.models.db_models import ChatSession
 from app.schemas.api_schemas import GenerateParams
+from app.services.auth.guest_quota import refund
 from app.services.chat.state_manager import ChatStateManager
 from app.services.generation import progress
 
@@ -17,6 +18,9 @@ logger = logging.getLogger(__name__)
 def _set_generation_status(session_id: str, status: str) -> None:
     with get_session() as db:
         db.query(ChatSession).filter(ChatSession.id == session_id).update({ChatSession.generation_status: status})
+        if status == "failed":
+            session = db.get(ChatSession, session_id)
+            refund(db, session.guest_id if session and session.user_id is None else None, "generate")  # type: ignore[arg-type]
         db.commit()
 
 

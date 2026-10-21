@@ -5,9 +5,11 @@ import { Button, Group, Paper, SegmentedControl, SimpleGrid, Skeleton, Text, Tex
 import { useDisclosure } from '@mantine/hooks';
 import { IconBooks, IconSearch, IconUpload } from '@tabler/icons-react';
 import { EmptyState } from '@/components/common/EmptyState';
+import { GuestLimitTooltip } from '@/components/common/GuestLimitTooltip';
 import { PageContainer } from '@/components/common/PageContainer';
 import { PageHeader } from '@/components/common/PageHeader';
 import { QueryError } from '@/components/common/QueryError';
+import { useGuestQuota } from '@/hooks/useAuth';
 import { useDocuments } from '@/hooks/useDocuments';
 import { DocumentCard } from './DocumentCard';
 import { UploadDocumentModal } from './UploadDocumentModal';
@@ -21,6 +23,7 @@ export function DocumentsView() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const { data: docs, isLoading, error, refetch } = useDocuments();
+  const { canUpload } = useGuestQuota();
   const handleDelete = useDeleteDocumentAction();
   useDocumentStatusNotifier(docs);
 
@@ -36,9 +39,11 @@ export function DocumentsView() {
   }, [docs, search, statusFilter]);
 
   const uploadButton = (
-    <Button leftSection={<IconUpload size={16} aria-hidden />} onClick={upload.open}>
-      Unggah Buku
-    </Button>
+    <GuestLimitTooltip kind="upload" locked={!canUpload}>
+      <Button leftSection={<IconUpload size={16} aria-hidden />} onClick={upload.open} disabled={!canUpload}>
+        Unggah Buku
+      </Button>
+    </GuestLimitTooltip>
   );
 
   let content: React.ReactNode;

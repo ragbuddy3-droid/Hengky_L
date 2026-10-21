@@ -56,6 +56,14 @@ class UserResponse(BaseModel):
         return as_utc(v)
 
 
+class GuestQuotaResponse(BaseModel):
+    """Sisa kuota sekali pakai mode tamu; selalu True untuk akun."""
+
+    can_upload: bool
+    can_create_session: bool
+    can_generate: bool
+
+
 class UpdateProfileRequest(BaseModel):
     name: str = Field(max_length=80)
 

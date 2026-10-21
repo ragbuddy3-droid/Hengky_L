@@ -1,5 +1,6 @@
 export const queryKeys = {
   me: ['auth', 'me'] as const,
+  quota: ['auth', 'quota'] as const,
 
   documents: ['documents'] as const,
   document: (id: string) => ['documents', id] as const,

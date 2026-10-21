@@ -8,6 +8,7 @@ from typing import Any
 
 from app.core.database import get_session
 from app.models.db_models import Chunk, Document
+from app.services.auth.guest_quota import refund
 from app.services.ingestion.extractor import process_pdf, process_pdf_pages
 from app.services.ingestion.factory import chunk_pages, chunk_text
 from app.services.retrieval.retriever import get_shared_dense_index, invalidate_sparse_cache
@@ -21,6 +22,9 @@ def _set_document_status(document_id: str, status: str, error_message: str | Non
         values[Document.error_message] = error_message
     with get_session() as db:
         updated = db.query(Document).filter(Document.id == document_id).update(values)
+        if status == "failed":
+            doc = db.get(Document, document_id)
+            refund(db, doc.guest_id if doc and doc.user_id is None else None, "upload")  # type: ignore[arg-type]
         db.commit()
         return bool(updated)
 

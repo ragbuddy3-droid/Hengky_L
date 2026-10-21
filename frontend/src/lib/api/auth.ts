@@ -1,4 +1,4 @@
-import type { ChangePasswordPayload, LoginPayload, RegisterPayload, User } from '@/types/auth';
+import type { ChangePasswordPayload, GuestQuota, LoginPayload, RegisterPayload, User } from '@/types/auth';
 import { ApiError, request } from './client';
 
 type Status = { status: string };
@@ -19,6 +19,8 @@ export const authApi = {
       throw err;
     }
   },
+
+  quota: () => request<GuestQuota>('/auth/quota'),
 
   updateProfile: (name: string) => request<User>('/auth/me', { method: 'PATCH', json: { name } }),
 

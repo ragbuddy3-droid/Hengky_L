@@ -18,6 +18,7 @@ from app.schemas.api_schemas import (
     ChatSessionListItem,
     ChatSessionResponse,
 )
+from app.services.auth.guest_quota import GUEST_LIMIT_MESSAGES, can_use, consume
 from app.services.auth.owner import Owner
 from app.services.chat.intent import is_generation_intent, parse_generation_params
 from app.services.chat.session_store import create_session, delete_chat_session, get_chat_session
@@ -108,7 +109,10 @@ def create_new_session(data: ChatSessionCreate, owner: Owner = Depends(get_owner
     with get_session() as db:
         if not db.query(Document.id).filter(Document.id == data.document_id, owner.clause(Document)).first():
             raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan")
+        if not can_use(db, owner, "session"):
+            raise HTTPException(status_code=403, detail=GUEST_LIMIT_MESSAGES["session"])
         session = create_session(db, data.document_id, owner)
+        consume(db, owner, "session")
         db.commit()
         return ChatSessionResponse.model_validate({"id": session.id, "document_id": session.document_id})
 
@@ -155,6 +159,8 @@ def send_message(
         if is_generation_intent(data.content):
             if str(session.generation_status) == "running":
                 reply = "Soal sebelumnya masih dibuat. Mohon tunggu hingga selesai sebelum meminta soal baru."
+            elif not can_use(db, owner, "generate"):
+                reply = GUEST_LIMIT_MESSAGES["generate"]
             else:
                 params = parse_generation_params(data.content)
                 bot_msg = manager.add_message(
@@ -166,6 +172,7 @@ def send_message(
                     ChatSession.generation_count: params.num_questions,
                     ChatSession.generation_message_id: bot_msg.id,
                 })
+                consume(db, owner, "generate")
                 db.commit()
                 progress.discard(session_id)
                 # Status sudah 'running' di DB sebelum task berjalan, jadi polling tidak melihat celah 'idle'
