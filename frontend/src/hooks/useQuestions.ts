@@ -8,7 +8,7 @@ import { queryKeys } from '@/lib/query-keys';
 export function useQuestions(sessionId?: string) {
   return useQuery({
     queryKey: queryKeys.questions(sessionId),
-    queryFn: () => questionsApi.list({ sessionId }),
+    queryFn: () => questionsApi.list(sessionId),
   });
 }
 

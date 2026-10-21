@@ -55,14 +55,13 @@ export interface Question {
   revision_count: number;
   knowledge_point?: string | null;
   grounding_evidence?: string | null;
-  source_chunks: string[];
-  used_chunks: UsedChunk[];
   quality_warnings?: string[] | null;
 }
 
 /** GET /questions/{id} */
-export interface QuestionDetail extends Omit<Question, 'source_chunks' | 'document_id' | 'document_filename'> {
+export interface QuestionDetail extends Omit<Question, 'document_id' | 'document_filename'> {
   session_id: string;
+  used_chunks: UsedChunk[];
   prompt_traces?: PromptTraceItem[] | null;
   validation_logs: ValidationLog[];
 }

@@ -4,7 +4,6 @@ import { request } from './client';
 export interface UploadDocumentInput {
   file: File;
   subject: string;
-  chunkingStrategy?: string;
 }
 
 export const documentsApi = {
@@ -14,11 +13,10 @@ export const documentsApi = {
 
   chunks: (id: string) => request<DocumentChunk[]>(`/documents/${id}/chunks`),
 
-  upload: ({ file, subject, chunkingStrategy = 'fixed' }: UploadDocumentInput) => {
+  upload: ({ file, subject }: UploadDocumentInput) => {
     const body = new FormData();
     body.append('file', file);
     body.append('subject', subject);
-    body.append('chunking_strategy', chunkingStrategy);
     return request<DocumentUploadResponse>('/documents/', { method: 'POST', body });
   },
 

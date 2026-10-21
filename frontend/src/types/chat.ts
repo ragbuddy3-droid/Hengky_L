@@ -8,7 +8,6 @@ export interface ChatSessionListItem {
   id: string;
   document_id: string;
   document_filename?: string | null;
-  message_count: number;
   last_message_snippet?: string | null;
   created_at?: string | null;
   generation_status: GenerationStatus;
@@ -21,7 +20,6 @@ export interface ChatSessionListItem {
 export interface ChatSession {
   id: string;
   document_id: string;
-  created_at?: string | null;
 }
 
 export interface ChatMessage {

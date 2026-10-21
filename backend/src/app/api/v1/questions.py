@@ -1,10 +1,10 @@
-"""Questions API router v1 with Multi-Stage audit inspection."""
+"""Questions API: question bank listing and per-question audit detail."""
 
 import json
-import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import defer
 
 from app.api.deps import get_owner
 from app.core.database import get_session
@@ -16,8 +16,6 @@ from app.schemas.api_schemas import (
     ValidationLogResponse,
 )
 from app.services.auth.owner import Owner
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/questions", tags=["questions"])
 
@@ -113,6 +111,7 @@ def list_questions(
     with get_session() as db:
         query = (
             db.query(Question, ChatSession.document_id, Document.filename)
+            .options(defer(Question.prompt_traces))
             .join(ChatSession, Question.session_id == ChatSession.id)
             .outerjoin(Document, ChatSession.document_id == Document.id)
             .filter(owner.clause(ChatSession))
@@ -129,7 +128,6 @@ def list_questions(
                 **_common_fields(q),
                 "document_id": doc_id,
                 "document_filename": doc_filename,
-                "chunk_ids": q.chunk_ids or "[]",
             })
             for q, doc_id, doc_filename in rows
         ]

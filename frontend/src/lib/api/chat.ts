@@ -2,8 +2,7 @@ import type { ChatMessage, ChatSession, ChatSessionListItem } from '@/types/chat
 import { API_BASE_URL, request } from './client';
 
 export const chatApi = {
-  listSessions: (documentId?: string) =>
-    request<ChatSessionListItem[]>('/chat/sessions', { query: { document_id: documentId } }),
+  listSessions: () => request<ChatSessionListItem[]>('/chat/sessions'),
 
   getSession: (sessionId: string) => request<ChatSessionListItem>(`/chat/sessions/${sessionId}`),
 

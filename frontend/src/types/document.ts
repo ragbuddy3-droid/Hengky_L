@@ -7,7 +7,6 @@ export interface DocumentItem {
   filename: string;
   subject: string;
   status: DocumentStatus | (string & {});
-  chunking_strategy?: string | null;
   created_at?: string | null;
   error_message?: string | null;
   warning_message?: string | null;
@@ -26,9 +25,6 @@ export interface DocumentChunk {
   category: string;
   section_heading?: string | null;
   chapter?: string | null;
-  page_number?: number | null;
-  chunk_index?: number | null;
-  section_type?: string | null;
   word_count: number;
   created_at?: string | null;
 }

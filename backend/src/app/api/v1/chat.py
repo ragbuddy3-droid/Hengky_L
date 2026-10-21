@@ -2,11 +2,12 @@
 
 import asyncio
 import json
-import logging
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_owner
 from app.core.database import get_session
@@ -25,23 +26,35 @@ from app.services.chat.session_store import create_session, delete_chat_session,
 from app.services.generation import progress
 from app.services.generation.runner import background_generate_questions, background_revise_question
 
-logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 _STREAM_START_WAIT_TICKS = 40  # x 0.25 s
 _NOT_FOUND = "Sesi chat tidak ditemukan"
 
 
-def _session_item(s: ChatSession) -> ChatSessionListItem:
-    last_msg = s.messages[-1].content if s.messages else None
+def _last_messages(db: Session, session_ids: list[str]) -> dict[str, str]:
+    """Latest message content per session, in one query."""
+    latest = (
+        db.query(ChatMessage.session_id, func.max(ChatMessage.created_at).label("at"))
+        .filter(ChatMessage.session_id.in_(session_ids))
+        .group_by(ChatMessage.session_id)
+        .subquery()
+    )
+    rows = (
+        db.query(ChatMessage.session_id, ChatMessage.content)
+        .join(latest, (ChatMessage.session_id == latest.c.session_id) & (ChatMessage.created_at == latest.c.at))
+        .all()
+    )
+    return {session_id: content for session_id, content in rows}
+
+
+def _session_item(s: ChatSession, last_msg: str | None) -> ChatSessionListItem:
     if last_msg and len(last_msg) > 60:
         last_msg = last_msg[:60] + "..."
     return ChatSessionListItem.model_validate({
         "id": s.id,
         "document_id": s.document_id,
         "document_filename": s.document.filename if s.document else None,
-        "message_count": len(s.messages) if s.messages else 0,
         "last_message_snippet": last_msg,
         "created_at": s.created_at.strftime("%Y-%m-%d %H:%M") if s.created_at is not None else None,
         "generation_status": s.generation_status or "idle",
@@ -54,10 +67,12 @@ def _session_item(s: ChatSession) -> ChatSessionListItem:
 def list_sessions(document_id: str | None = None, owner: Owner = Depends(get_owner)):
     """List the requester's chat sessions, optionally filtered by document_id."""
     with get_session() as db:
-        query = db.query(ChatSession).filter(owner.clause(ChatSession))
+        query = db.query(ChatSession).options(selectinload(ChatSession.document)).filter(owner.clause(ChatSession))
         if document_id:
             query = query.filter(ChatSession.document_id == document_id)
-        return [_session_item(s) for s in query.order_by(ChatSession.created_at.desc()).all()]
+        sessions = query.order_by(ChatSession.created_at.desc()).all()
+        last = _last_messages(db, [str(s.id) for s in sessions])
+        return [_session_item(s, last.get(str(s.id))) for s in sessions]
 
 
 @router.get("/sessions/{session_id}", response_model=ChatSessionListItem)
@@ -67,7 +82,7 @@ def get_session_detail(session_id: str, owner: Owner = Depends(get_owner)):
         session = get_chat_session(db, session_id, owner)
         if not session:
             raise HTTPException(status_code=404, detail=_NOT_FOUND)
-        return _session_item(session)
+        return _session_item(session, _last_messages(db, [session_id]).get(session_id))
 
 
 @router.get("/sessions/{session_id}/generation/stream")

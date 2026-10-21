@@ -1,10 +1,10 @@
-"""Pydantic schemas for API interactions with Multi-Stage AQG support."""
+"""Pydantic request/response schemas of the API."""
 
 import json
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 GenerationStatus = Literal["idle", "running", "done", "failed"]
 
@@ -14,6 +14,19 @@ def as_utc(v: datetime | None) -> datetime | None:
     if isinstance(v, datetime) and v.tzinfo is None:
         return v.replace(tzinfo=UTC)
     return v
+
+
+UtcDatetime = Annotated[datetime | None, AfterValidator(as_utc)]
+
+
+def _json_list(v: Any) -> list[Any]:
+    """A JSON-array text column as a list; empty or unreadable values become []."""
+    if isinstance(v, str):
+        try:
+            v = json.loads(v)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return []
+    return v if isinstance(v, list) else []
 
 
 PASSWORD_MIN_LENGTH = 8
@@ -47,13 +60,9 @@ class UserResponse(BaseModel):
     id: str
     name: str
     email: str
-    created_at: datetime | None = None
+    created_at: UtcDatetime = None
 
     model_config = ConfigDict(from_attributes=True)
-
-    @field_validator("created_at", mode="after")
-    def ensure_utc(cls, v: datetime | None) -> datetime | None:
-        return as_utc(v)
 
 
 class GuestQuotaResponse(BaseModel):
@@ -94,7 +103,6 @@ class DocumentStatusResponse(BaseModel):
     subject: str
     status: str
     filename: str
-    chunking_strategy: str | None = "fixed"
     created_at: str | None = None
     error_message: str | None = None
     warning_message: str | None = None
@@ -109,16 +117,12 @@ class ChatSessionCreate(BaseModel):
 class ChatSessionResponse(BaseModel):
     id: str
     document_id: str
-    created_at: datetime | None = None
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class ChatSessionListItem(BaseModel):
     id: str
     document_id: str
     document_filename: str | None = None
-    message_count: int = 0
     last_message_snippet: str | None = None
     created_at: str | None = None
     generation_status: GenerationStatus = "idle"
@@ -134,13 +138,9 @@ class ChatMessageResponse(BaseModel):
     id: str
     role: str
     content: str
-    created_at: datetime | None = None
+    created_at: UtcDatetime = None
 
     model_config = ConfigDict(from_attributes=True)
-
-    @field_validator("created_at", mode="after")
-    def ensure_utc(cls, v: datetime | None) -> datetime | None:
-        return as_utc(v)
 
 
 class GenerateParams(BaseModel):
@@ -198,11 +198,8 @@ class ValidationLogResponse(BaseModel):
         return v
 
 
-class QuestionResponse(BaseModel):
+class _QuestionBase(BaseModel):
     id: str
-    session_id: str | None = None
-    document_id: str | None = None
-    document_filename: str | None = None
     question_type: str = "esai"
     question_text: str
     answer_key: str
@@ -214,75 +211,27 @@ class QuestionResponse(BaseModel):
     revision_count: int = 0
     knowledge_point: str | None = None
     grounding_evidence: str | None = None
-    source_chunks: list[str] = Field(default=[], validation_alias="chunk_ids")
-    used_chunks: list[UsedChunkResponse] = []
-    quality_warnings: list[str] | None = []
-
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
-
-    @field_validator("quality_warnings", mode="before")
-    def parse_quality_warnings(cls, v: Any) -> list[str]:
-        if not v:
-            return []
-        if isinstance(v, str):
-            try:
-                parsed = json.loads(v)
-                return [str(x) for x in parsed] if isinstance(parsed, list) else []
-            except (json.JSONDecodeError, TypeError, ValueError):
-                return []
-        return v if isinstance(v, list) else []
-
-    @field_validator("source_chunks", mode="before")
-    def parse_source_chunks(cls, v: Any) -> list[Any]:
-        if isinstance(v, str):
-            try:
-                return json.loads(v)
-            except (json.JSONDecodeError, TypeError, ValueError):
-                return []
-        return v if isinstance(v, list) else []
-
-
-class QuestionDetailResponse(BaseModel):
-    id: str
-    session_id: str
-    question_type: str = "esai"
-    question_text: str
-    answer_key: str
-    explanation: str | None = None
-    source_reference: str | None = None
-    bloom_level: str
-    status: str
-    refinement_count: int
-    revision_count: int = 0
-    knowledge_point: str | None = None
-    grounding_evidence: str | None = None
-    prompt_traces: list[PromptTraceItemResponse] | None = []
-    validation_logs: list[ValidationLogResponse] = []
-    used_chunks: list[UsedChunkResponse] = []
     quality_warnings: list[str] | None = []
 
     model_config = ConfigDict(from_attributes=True)
 
     @field_validator("quality_warnings", mode="before")
-    def parse_quality_warnings_detail(cls, v: Any) -> list[str]:
-        if not v:
-            return []
-        if isinstance(v, str):
-            try:
-                parsed = json.loads(v)
-                return [str(x) for x in parsed] if isinstance(parsed, list) else []
-            except (json.JSONDecodeError, TypeError, ValueError):
-                return []
-        return v if isinstance(v, list) else []
+    def parse_quality_warnings(cls, v: Any) -> list[str]:
+        return [str(x) for x in _json_list(v)]
+
+
+class QuestionResponse(_QuestionBase):
+    session_id: str | None = None
+    document_id: str | None = None
+    document_filename: str | None = None
+
+
+class QuestionDetailResponse(_QuestionBase):
+    session_id: str
+    prompt_traces: list[PromptTraceItemResponse] | None = []
+    validation_logs: list[ValidationLogResponse] = []
+    used_chunks: list[UsedChunkResponse] = []
 
     @field_validator("prompt_traces", mode="before")
-    def parse_prompt_traces_detail(cls, v: Any) -> list[Any]:
-        if not v:
-            return []
-        if isinstance(v, str):
-            try:
-                parsed = json.loads(v)
-                return parsed if isinstance(parsed, list) else []
-            except (json.JSONDecodeError, TypeError, ValueError):
-                return []
-        return v if isinstance(v, list) else []
+    def parse_prompt_traces(cls, v: Any) -> list[Any]:
+        return _json_list(v)

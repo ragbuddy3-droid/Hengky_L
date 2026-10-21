@@ -37,7 +37,6 @@ def _document_response(doc: Document) -> DocumentStatusResponse:
         "subject": doc.subject,
         "status": doc.status,
         "filename": doc.filename,
-        "chunking_strategy": doc.chunking_strategy or "fixed",
         "created_at": doc.uploaded_at.strftime("%Y-%m-%d %H:%M") if doc.uploaded_at is not None else None,
         "error_message": doc.error_message,
         "warning_message": doc.warning_message,
@@ -49,10 +48,9 @@ async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile,
     subject: str = Form(...),
-    chunking_strategy: str = Form("fixed"),
     owner: Owner = Depends(get_owner),
 ):
-    """Upload PDF file with selected chunking strategy."""
+    """Upload a PDF and start ingestion in the background."""
     if not file.filename or not file.filename.lower().endswith('.pdf'):
         logger.warning("Upload rejected: non-PDF file '%s'", file.filename)
         raise HTTPException(status_code=400, detail="Hanya file dengan ekstensi .pdf yang didukung.")
@@ -72,8 +70,8 @@ async def upload_document(
     file_path = _RAW_DATA_DIR / f"{doc_id}_{file.filename}"
     file_path.write_bytes(content)
 
-    logger.info("Upload received: file='%s', subject='%s', strategy='%s', size=%.2fMB, doc_id='%s'",
-                file.filename, subject, chunking_strategy, len(content) / (1024 * 1024), doc_id)
+    logger.info("Upload received: file='%s', subject='%s', size=%.2fMB, doc_id='%s'",
+                file.filename, subject, len(content) / (1024 * 1024), doc_id)
 
     with get_session() as db:
         db.add(Document(
@@ -82,13 +80,12 @@ async def upload_document(
             status="pending",
             filename=file.filename,
             filepath=str(file_path),
-            chunking_strategy=chunking_strategy,
             **owner.fields(),
         ))
         consume(db, owner, "upload")
         db.commit()
 
-    background_tasks.add_task(process_document, doc_id, str(file_path), chunking_strategy)
+    background_tasks.add_task(process_document, doc_id, str(file_path))
     return DocumentUploadResponse(id=doc_id, status="pending", message="Dokumen berhasil diunggah dan pemrosesan dimulai.")
 
 
