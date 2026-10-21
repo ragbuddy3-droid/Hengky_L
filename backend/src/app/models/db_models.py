@@ -153,6 +153,7 @@ class Question(Base):
     bloom_level = Column(String, nullable=False)
     status = Column(String, nullable=False, default="final")  # final / needs_review
     refinement_count = Column(Integer, default=0, nullable=False)
+    revision_count = Column(Integer, default=0, nullable=False)  # Revisi / buat ulang atas permintaan pengguna lewat chat
 
     # Multi-Stage AQG Extensions
     grounding_evidence = Column(Text, nullable=True)  # Exact quote from context

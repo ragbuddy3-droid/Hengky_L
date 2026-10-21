@@ -45,6 +45,7 @@ def _common_fields(q: Question) -> dict[str, Any]:
         "bloom_level": q.bloom_level,
         "status": q.status,
         "refinement_count": q.refinement_count,
+        "revision_count": q.revision_count or 0,
         "knowledge_point": q.knowledge_point,
         "grounding_evidence": q.grounding_evidence,
         "quality_warnings": q.quality_warnings,
@@ -120,7 +121,8 @@ def list_questions(
             query = query.filter(Question.session_id == session_id)
         if document_id:
             query = query.filter(ChatSession.document_id == document_id)
-        rows = query.order_by(Question.created_at.desc()).all()
+        # Exact reverse of the session numbering (state_manager.session_questions), ties broken by id
+        rows = query.order_by(Question.created_at.desc(), Question.id.desc()).all()
 
         return [
             QuestionResponse.model_validate({

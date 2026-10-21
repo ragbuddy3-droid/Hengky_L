@@ -119,3 +119,54 @@ def test_questions_include_document_and_filter(db_factory):
     assert only_a[0]["session_id"] == sess_a
     assert only_a[0]["document_id"] == doc_a
     assert only_a[0]["document_filename"] == "buku-a.pdf"
+
+
+def _seed_questions(get_session, session_id: str, n: int) -> list[str]:
+    ids = []
+    with get_session() as db:
+        for i in range(n):
+            q = Question(session_id=session_id, chunk_ids="[]", question_text=f"Q{i + 1}?", answer_key="A", bloom_level="C2-Memahami")
+            db.add(q)
+            db.flush()
+            ids.append(str(q.id))
+        db.commit()
+    return ids
+
+
+def test_question_actions_via_chat(db_factory, monkeypatch):
+    from app.services.chat import handler
+
+    _, session_id = _seed_session(db_factory)
+    ids = _seed_questions(db_factory, session_id, 2)
+    send = lambda text: client.post(f"/api/v1/chat/sessions/{session_id}/messages", json={"content": text}).json()  # noqa: E731
+
+    # Out of range / missing number: the assistant asks instead of acting
+    assert "tidak ada" in send("Buat ulang soal nomor 5")["content"]
+
+    # Discussion answers synchronously about the referenced question
+    seen = {}
+
+    def fake_answer(db, number, question, history, message):
+        seen["number"], seen["text"] = number, question.question_text
+        return "Karena materi menyebutkannya."
+
+    monkeypatch.setattr(handler, "answer_about_question", fake_answer)
+    monkeypatch.setattr(handler, "route_message", lambda text, history, count: handler.ChatIntent(intent="discuss", question_number=2))
+    assert send("Kenapa jawaban soal 2 begitu?")["content"] == "Karena materi menyebutkannya."
+    assert seen == {"number": 2, "text": "Q2?"}
+
+    # Regenerating starts one background revision of that question and marks the session running
+    from app.services.chat.intent import route_message
+    monkeypatch.setattr(handler, "route_message", route_message)
+    jobs = []
+    monkeypatch.setattr(chat, "background_revise_question", lambda *args: jobs.append(args))
+    reply = send("Buat ulang soal nomor 1 jadi C4")
+    assert jobs == [(session_id, ids[0], "regenerate", "C4-Menganalisis", None)]
+    detail = client.get(f"/api/v1/chat/sessions/{session_id}").json()
+    assert detail["generation_status"] == "running"
+    assert detail["generation_count"] == 1
+    assert detail["generation_message_id"] == reply["id"]
+
+    # While it runs, another change is refused
+    send("Soal nomor 2 terlalu mudah")
+    assert len(jobs) == 1

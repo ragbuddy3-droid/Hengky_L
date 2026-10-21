@@ -210,6 +210,7 @@ class QuestionResponse(BaseModel):
     bloom_level: str
     status: str
     refinement_count: int
+    revision_count: int = 0
     knowledge_point: str | None = None
     grounding_evidence: str | None = None
     source_chunks: list[str] = Field(default=[], validation_alias="chunk_ids")
@@ -251,6 +252,7 @@ class QuestionDetailResponse(BaseModel):
     bloom_level: str
     status: str
     refinement_count: int
+    revision_count: int = 0
     knowledge_point: str | None = None
     grounding_evidence: str | None = None
     prompt_traces: list[PromptTraceItemResponse] | None = []

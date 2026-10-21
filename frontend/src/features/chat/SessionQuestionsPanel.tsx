@@ -27,7 +27,14 @@ function QuestionRow({ question, index, onSelect }: { question: Question; index:
               {QUESTION_TYPE_LABELS[question.question_type] ?? question.question_type}
             </Text>
           </Group>
-          <QuestionStatusBadge status={question.status} />
+          <Group gap={4}>
+            {question.revision_count > 0 && (
+              <Badge size="xs" variant="light" color="gray">
+                direvisi {question.revision_count}×
+              </Badge>
+            )}
+            <QuestionStatusBadge status={question.status} />
+          </Group>
         </Group>
         <Text size="sm" lineClamp={3}>
           {question.question_text}
@@ -178,7 +185,10 @@ export function SessionQuestionsPanel({
               Soal yang dibuat di percakapan ini akan muncul di sini.
             </Text>
           ) : (
-            questions.map((q, i) => <QuestionRow key={q.id} question={q} index={i + 1} onSelect={() => setSelected(q)} />)
+            // API mengurutkan terbaru dulu; nomor mengikuti urutan pembuatan, sama dengan "soal nomor N" di chat
+            questions.map((q, i) => (
+              <QuestionRow key={q.id} question={q} index={questions.length - i} onSelect={() => setSelected(q)} />
+            ))
           )}
         </Stack>
       </ScrollArea>

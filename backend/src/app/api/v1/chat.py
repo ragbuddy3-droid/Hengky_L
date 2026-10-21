@@ -20,11 +20,10 @@ from app.schemas.api_schemas import (
 )
 from app.services.auth.guest_quota import GUEST_LIMIT_MESSAGES, can_use, consume
 from app.services.auth.owner import Owner
-from app.services.chat.intent import is_generation_intent, parse_generation_params
+from app.services.chat.handler import handle_message
 from app.services.chat.session_store import create_session, delete_chat_session, get_chat_session
-from app.services.chat.state_manager import ChatStateManager
 from app.services.generation import progress
-from app.services.generation.runner import background_generate_questions
+from app.services.generation.runner import background_generate_questions, background_revise_question
 
 logger = logging.getLogger(__name__)
 
@@ -152,39 +151,13 @@ def send_message(
             raise HTTPException(status_code=404, detail=_NOT_FOUND)
         session.last_active_at = utcnow()  # type: ignore[assignment]
 
-        manager = ChatStateManager(session_id, db)
-        manager.add_message("user", data.content)
+        reply = handle_message(db, session, owner, data.content)
         db.commit()
-
-        if is_generation_intent(data.content):
-            if str(session.generation_status) == "running":
-                reply = "Soal sebelumnya masih dibuat. Mohon tunggu hingga selesai sebelum meminta soal baru."
-            elif not can_use(db, owner, "generate"):
-                reply = GUEST_LIMIT_MESSAGES["generate"]
+        if reply.job:
+            kind, args = reply.job
+            progress.discard(session_id)
+            if kind == "generate":
+                background_tasks.add_task(background_generate_questions, *args)
             else:
-                params = parse_generation_params(data.content)
-                bot_msg = manager.add_message(
-                    "assistant",
-                    f"Sedang membuat {params.num_questions} soal ({params.bloom_level or 'Beragam Level'}). Mohon tunggu sebentar..."
-                )
-                db.query(ChatSession).filter(ChatSession.id == session_id).update({
-                    ChatSession.generation_status: "running",
-                    ChatSession.generation_count: params.num_questions,
-                    ChatSession.generation_message_id: bot_msg.id,
-                })
-                consume(db, owner, "generate")
-                db.commit()
-                progress.discard(session_id)
-                # Status sudah 'running' di DB sebelum task berjalan, jadi polling tidak melihat celah 'idle'
-                background_tasks.add_task(background_generate_questions, session_id, data.content, params)
-                return ChatMessageResponse.model_validate(bot_msg)
-        else:
-            ref_content = manager.resolve_reference(data.content)
-            if ref_content:
-                reply = f"Mengenai soal tersebut ({ref_content}): Silakan sampaikan pertanyaan Anda lebih lanjut."
-            else:
-                reply = "Halo! Anda dapat meminta saya untuk membuat soal dari dokumen yang diunggah (contoh: 'Buatkan 5 soal C4 bab 2')."
-
-        bot_msg = manager.add_message("assistant", reply)
-        db.commit()
-        return ChatMessageResponse.model_validate(bot_msg)
+                background_tasks.add_task(background_revise_question, *args)
+        return ChatMessageResponse.model_validate(reply.message)

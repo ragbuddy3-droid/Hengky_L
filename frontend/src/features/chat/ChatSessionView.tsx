@@ -162,6 +162,7 @@ export function ChatSessionView({ sessionId }: { sessionId: string }) {
           documentId={session?.document_id}
           sending={sendMessage.isPending}
           generating={!!pending}
+          hasQuestions={questionCount > 0}
         />
       </Box>
 

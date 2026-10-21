@@ -7,7 +7,7 @@ import { GUEST_LIMIT_MESSAGES } from '@/components/common/GuestLimitTooltip';
 import { useGuestQuota } from '@/hooks/useAuth';
 import { ParamsPopover } from './ParamsPopover';
 import { PromptChip } from './PromptChip';
-import { EXAMPLE_PROMPTS } from './prompts';
+import { EXAMPLE_PROMPTS, QUESTION_PROMPTS } from './prompts';
 
 export function Composer({
   value,
@@ -16,6 +16,7 @@ export function Composer({
   documentId,
   sending,
   generating,
+  hasQuestions = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -23,6 +24,8 @@ export function Composer({
   documentId?: string;
   sending: boolean;
   generating: boolean;
+  /** Sesi sudah punya soal: tampilkan contoh perintah bahas/buat ulang/revisi. */
+  hasQuestions?: boolean;
 }) {
   const { canGenerate } = useGuestQuota();
   const busy = sending || generating;
@@ -31,16 +34,17 @@ export function Composer({
 
   return (
     <Box px={{ base: 'md', sm: 'xl' }} pb="md" pt="xs" maw={960} mx="auto" w="100%">
-      {canGenerate ? (
+      {canGenerate || hasQuestions ? (
         <Group gap={6} mb={8} wrap="wrap">
-          <ParamsPopover documentId={documentId} disabled={busy} onSubmit={onSend} />
-          {EXAMPLE_PROMPTS.map((p) => (
+          {canGenerate && <ParamsPopover documentId={documentId} disabled={busy} onSubmit={onSend} />}
+          {(hasQuestions ? QUESTION_PROMPTS : EXAMPLE_PROMPTS).map((p) => (
             <PromptChip key={p} visibleFrom="sm" onClick={() => onChange(p)} disabled={busy} c="dimmed">
               {p}
             </PromptChip>
           ))}
         </Group>
-      ) : (
+      ) : null}
+      {!canGenerate && (
         <Text size="xs" c="dimmed" mb={8}>
           {GUEST_LIMIT_MESSAGES.generate}{' '}
           <Anchor component={Link} href="/login" fz="xs">
@@ -60,7 +64,13 @@ export function Composer({
               }
             }}
             placeholder={
-              generating ? 'Menunggu soal selesai dibuat…' : canGenerate ? 'Contoh: Buatkan 5 soal C3 bab 2' : 'Tulis pesan'
+              generating
+                ? 'Menunggu soal selesai dibuat…'
+                : hasQuestions
+                  ? 'Tanyakan, buat ulang, atau revisi soal, misalnya: Jelaskan soal nomor 2'
+                  : canGenerate
+                    ? 'Contoh: Buatkan 5 soal C3 bab 2'
+                    : 'Tulis pesan'
             }
             aria-label="Tulis pesan"
             autosize

@@ -51,6 +51,8 @@ export interface Question {
   bloom_level: string;
   status: QuestionStatus;
   refinement_count: number;
+  /** Berapa kali soal direvisi / dibuat ulang lewat chat. */
+  revision_count: number;
   knowledge_point?: string | null;
   grounding_evidence?: string | null;
   source_chunks: string[];

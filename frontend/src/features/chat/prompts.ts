@@ -1,5 +1,12 @@
 export const EXAMPLE_PROMPTS = ['Buatkan 5 soal C2', 'Buatkan 3 soal C4 bab 2', 'Buatkan 5 soal C3 bab 1'];
 
+/** Contoh perintah untuk soal yang sudah ada di sesi (bahas, buat ulang, revisi). */
+export const QUESTION_PROMPTS = [
+  'Jelaskan jawaban soal nomor 1',
+  'Buat ulang soal nomor 1 jadi C4',
+  'Soal nomor 1 terlalu mudah',
+];
+
 /** Susun kalimat permintaan yang dipahami parser backend (`_parse_generation_params`). */
 export function buildGenerationPrompt({
   count,

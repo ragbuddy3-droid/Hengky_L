@@ -140,6 +140,11 @@ def init_db() -> None:
                         conn.execute(text("ALTER TABLE questions ADD COLUMN quality_warnings TEXT;"))
                         conn.commit()
 
+                    if "revision_count" not in existing_cols:
+                        logger.info("Migrating database: adding revision_count column to questions table")
+                        conn.execute(text("ALTER TABLE questions ADD COLUMN revision_count INTEGER NOT NULL DEFAULT 0;"))
+                        conn.commit()
+
                 # Migration for chunks table
                 res_chunks = conn.execute(text("PRAGMA table_info(chunks);")).fetchall()
                 existing_chunk_cols = {row[1] for row in res_chunks}
