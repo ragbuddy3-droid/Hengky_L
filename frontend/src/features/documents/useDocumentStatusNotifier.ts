@@ -15,7 +15,9 @@ export function useDocumentStatusNotifier(docs: DocumentItem[] | undefined) {
       for (const doc of docs) {
         const before = prev.get(doc.id);
         if (before === doc.status || (before !== 'pending' && before !== 'processing')) continue;
-        if (doc.status === 'ready') {
+        if (doc.status === 'ready' && doc.warning_message) {
+          notifications.show({ color: 'yellow', title: 'Buku siap, dengan catatan', message: doc.warning_message });
+        } else if (doc.status === 'ready') {
           notifications.show({ color: 'green', title: 'Buku siap', message: `${doc.filename} siap dipakai untuk membuat soal.` });
         } else if (doc.status === 'failed') {
           notifications.show({ color: 'red', title: 'Pemrosesan gagal', message: doc.error_message || doc.filename });

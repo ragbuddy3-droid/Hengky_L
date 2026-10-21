@@ -198,6 +198,11 @@ def init_db() -> None:
                         conn.execute(text("ALTER TABLE documents ADD COLUMN error_message TEXT;"))
                         conn.commit()
 
+                    if "warning_message" not in existing_doc_cols:
+                        logger.info("Migrating database: adding warning_message column to documents table")
+                        conn.execute(text("ALTER TABLE documents ADD COLUMN warning_message TEXT;"))
+                        conn.commit()
+
                     _add_owner_columns(conn, "documents", existing_doc_cols)
 
                 # Migration for validation_logs table

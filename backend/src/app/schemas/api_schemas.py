@@ -97,6 +97,7 @@ class DocumentStatusResponse(BaseModel):
     chunking_strategy: str | None = "fixed"
     created_at: str | None = None
     error_message: str | None = None
+    warning_message: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { ActionIcon, Anchor, Card, Group, Menu, Stack, Text, ThemeIcon } from '@mantine/core';
-import { IconAlertCircle, IconBook2, IconDots, IconListDetails, IconTrash } from '@tabler/icons-react';
+import { IconAlertCircle, IconAlertTriangle, IconBook2, IconDots, IconListDetails, IconTrash } from '@tabler/icons-react';
 import { DocumentStatusBadge } from '@/components/common/Badges';
 import { formatDate } from '@/lib/format';
 import type { DocumentItem } from '@/types/document';
@@ -51,6 +51,15 @@ export function DocumentCard({ doc, onDelete }: { doc: DocumentItem; onDelete: (
             <IconAlertCircle size={16} color="var(--app-danger-text)" style={{ flexShrink: 0, marginTop: 2 }} aria-hidden />
             <Text size="xs" c="var(--app-danger-text)" lineClamp={2} title={doc.error_message}>
               {doc.error_message}
+            </Text>
+          </Group>
+        )}
+
+        {doc.status === 'ready' && doc.warning_message && (
+          <Group gap={6} wrap="nowrap" align="flex-start">
+            <IconAlertTriangle size={16} color="var(--app-warning-text)" style={{ flexShrink: 0, marginTop: 2 }} aria-hidden />
+            <Text size="xs" c="var(--app-warning-text)" lineClamp={2} title={doc.warning_message}>
+              {doc.warning_message}
             </Text>
           </Group>
         )}

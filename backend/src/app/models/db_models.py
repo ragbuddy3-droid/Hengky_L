@@ -57,6 +57,7 @@ class Document(Base):
     status = Column(String, nullable=False, default="pending")  # pending / processing / ready / failed
     chunking_strategy = Column(String, nullable=True, default="fixed")  # fixed / semantic
     error_message = Column(Text, nullable=True)
+    warning_message = Column(Text, nullable=True)  # e.g. content does not match the chosen subject
     uploaded_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 

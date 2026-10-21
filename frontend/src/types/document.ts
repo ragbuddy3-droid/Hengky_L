@@ -10,6 +10,7 @@ export interface DocumentItem {
   chunking_strategy?: string | null;
   created_at?: string | null;
   error_message?: string | null;
+  warning_message?: string | null;
 }
 
 export interface DocumentUploadResponse {

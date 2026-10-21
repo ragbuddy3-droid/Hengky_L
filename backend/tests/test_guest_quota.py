@@ -1,10 +1,12 @@
 """API tests for the guest one-time quota: one upload, one chat session and one question generation."""
 
 import asyncio
+import io
 from contextlib import contextmanager
 
 import pytest
 from fastapi.testclient import TestClient
+from pypdf import PdfWriter
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -18,7 +20,17 @@ from app.services.auth import data
 from app.services.auth.guest_quota import GUEST_LIMIT_MESSAGES
 from app.services.generation import runner
 
-PDF = ("buku.pdf", b"%PDF-1.4 kosong", "application/pdf")
+
+def make_pdf(pages: int = 12) -> bytes:
+    writer = PdfWriter()
+    for _ in range(pages):
+        writer.add_blank_page(width=595, height=842)
+    buf = io.BytesIO()
+    writer.write(buf)
+    return buf.getvalue()
+
+
+PDF = ("buku.pdf", make_pdf(), "application/pdf")
 
 
 @pytest.fixture

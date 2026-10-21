@@ -14,6 +14,7 @@ from app.services.auth.data import remove_document_files
 from app.services.auth.guest_quota import GUEST_LIMIT_MESSAGES, can_use, consume
 from app.services.auth.owner import Owner
 from app.services.ingestion.pipeline import process_document
+from app.services.ingestion.validation import DocumentRejected, validate_pdf_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ def _document_response(doc: Document) -> DocumentStatusResponse:
         "chunking_strategy": doc.chunking_strategy or "fixed",
         "created_at": doc.uploaded_at.strftime("%Y-%m-%d %H:%M") if doc.uploaded_at is not None else None,
         "error_message": doc.error_message,
+        "warning_message": doc.warning_message,
     })
 
 
@@ -58,10 +60,16 @@ async def upload_document(
         if not can_use(db, owner, "upload"):
             raise HTTPException(status_code=403, detail=GUEST_LIMIT_MESSAGES["upload"])
 
+    content = await file.read()
+    try:
+        validate_pdf_bytes(content)
+    except DocumentRejected as e:
+        logger.warning("Upload rejected: file='%s': %s", file.filename, e.user_message)
+        raise HTTPException(status_code=400, detail=e.user_message) from e
+
     doc_id = str(uuid.uuid4())
     _RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
     file_path = _RAW_DATA_DIR / f"{doc_id}_{file.filename}"
-    content = await file.read()
     file_path.write_bytes(content)
 
     logger.info("Upload received: file='%s', subject='%s', strategy='%s', size=%.2fMB, doc_id='%s'",

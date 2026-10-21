@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Alert, Button, Paper, SimpleGrid, Skeleton, Stack, Text, Title } from '@mantine/core';
-import { IconAlertCircle, IconFileOff, IconLoader, IconTrash } from '@tabler/icons-react';
+import { IconAlertCircle, IconAlertTriangle, IconFileOff, IconLoader, IconTrash } from '@tabler/icons-react';
 import { DocumentStatusBadge } from '@/components/common/Badges';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageContainer } from '@/components/common/PageContainer';
@@ -124,6 +124,12 @@ export function DocumentDetailView({ id }: { id: string }) {
       {doc.status === 'failed' && (
         <Alert color="red" title="Pemrosesan gagal" icon={<IconAlertCircle size={18} aria-hidden />} mb="lg">
           {doc.error_message || 'Terjadi kesalahan saat memproses buku. Coba hapus lalu unggah ulang.'}
+        </Alert>
+      )}
+
+      {ready && doc.warning_message && (
+        <Alert color="yellow" title="Periksa mata pelajaran" icon={<IconAlertTriangle size={18} aria-hidden />} mb="lg">
+          {doc.warning_message}
         </Alert>
       )}
 
