@@ -37,3 +37,6 @@ Thumbs.db
 
 # Claude Code (local only)
 .claude/
+
+# Manual book (local only)
+docs/

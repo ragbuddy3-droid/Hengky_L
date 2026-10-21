@@ -63,6 +63,7 @@ from app.services.retrieval.retriever import (
 from app.services.validation.grounding_checker import compute_grounding_evidence_score
 from app.services.validation.quality_checks import (
     deduplicate_questions,
+    find_book_navigation_issue,
     find_clarity_issue,
     find_unanswerable_answer,
     is_reflective_question,
@@ -531,6 +532,9 @@ def grounding_validation(state: QuestionState) -> dict[str, Any]:
     unanswerable = find_unanswerable_answer(q.get("answer", ""))
     if unanswerable:
         return fail("pre_check", "fail (unanswerable)", unanswerable)
+    navigation_issue = find_book_navigation_issue(q_text, q.get("answer", ""))
+    if navigation_issue:
+        return fail("pre_check", "fail (book_navigation)", navigation_issue)
 
     grounding_res = compute_grounding_evidence_score(
         question_text=q_text,

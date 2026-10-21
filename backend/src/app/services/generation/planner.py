@@ -7,6 +7,7 @@ from app.core.database import get_session
 from app.models.db_models import ChatSession, Question
 from app.services.generation.schemas import ContentAnalysis
 from app.services.validation.quality_checks import (
+    find_book_navigation_issue,
     find_clarity_issue,
     is_reflective_question,
     jaccard,
@@ -210,7 +211,9 @@ def _load_few_shot(document_id: str, bloom_level: str) -> str:
         )
         good = [
             q for q in past_qs
-            if not find_clarity_issue(str(q.question_text)) and not is_reflective_question(str(q.question_text))
+            if not find_clarity_issue(str(q.question_text))
+            and not is_reflective_question(str(q.question_text))
+            and not find_book_navigation_issue(str(q.question_text))
         ][:2]
         if not good:
             return NO_FEW_SHOT

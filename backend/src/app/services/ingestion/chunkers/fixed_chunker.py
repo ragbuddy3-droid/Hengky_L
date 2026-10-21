@@ -92,7 +92,9 @@ class FixedChunker:
             extracted_ch, current_heading = extract_chapter_and_heading(
                 content, current_chapter, current_heading
             )
-            if extracted_ch and extracted_ch != current_chapter:
+            # Page chapters (from the PDF extractor) are authoritative; "Bab N" lines in the
+            # chunk text only label raw text that came without page metadata.
+            if not page.chapter and extracted_ch and extracted_ch != current_chapter:
                 current_chapter = extracted_ch
                 current_heading = None
 

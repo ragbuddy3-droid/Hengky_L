@@ -37,6 +37,20 @@ UNANSWERABLE_ANSWER_PATTERNS = [
     r"\b(?:teks|materi|bacaan|konteks)\s+(?:tidak|tidak\s+pernah)\s+(?:menyebutkan|menjelaskan|mencantumkan)",
 ]
 
+# Questions about using the book itself (scan a barcode, open a link, turn to a page) test nothing from the material
+BOOK_NAVIGATION_PATTERNS = [
+    r"\bbar\s*code\b",
+    r"\bkode\s+qr\b",
+    r"\bqr\s*code\b",
+    r"\b(?:pindai|memindai|dipindai)\w*",
+    r"\bscan\b",
+    r"\btautan\b",
+    r"\blink\b",
+    r"\bhalaman\s+\d+",
+    r"\bbuku\s+tugas\b",
+    r"\bcara\s+(?:kamu|kalian)\s+(?:membaca|mengakses|mendapatkan)\s+(?:narasi|bacaan|cerita|artikel|video|lembar\s+kerja)\b",
+]
+
 # Reflective / meta-learning questions ask about the lesson itself, not the book content
 REFLECTIVE_PATTERNS = [
     r"setelah mempelajari bab ini",
@@ -127,6 +141,17 @@ def find_unanswerable_answer(answer: str) -> str | None:
     return None
 
 
+def find_book_navigation_issue(q_text: str, answer: str = "") -> str | None:
+    """Return a feedback message if the question or its answer is about using the book rather than its content."""
+    text = f"{q_text}\n{answer}".lower()
+    if any(re.search(p, text) for p in BOOK_NAVIGATION_PATTERNS):
+        return (
+            "Soal menanyakan cara memakai buku (barcode/kode QR, tautan, halaman, buku tugas), bukan isi materi. "
+            "Ganti dengan pertanyaan tentang konsep atau fakta materi."
+        )
+    return None
+
+
 def validate_answer_quality(question: dict[str, Any]) -> list[str]:
     """Check answer quality heuristics. Returns list of issue descriptions."""
     issues: list[str] = []
@@ -149,6 +174,9 @@ def validate_answer_quality(question: dict[str, Any]) -> list[str]:
     clarity_issue = find_clarity_issue(q_text) if q_text else None
     if clarity_issue:
         issues.append(clarity_issue)
+    navigation_issue = find_book_navigation_issue(q_text, answer)
+    if navigation_issue:
+        issues.append(navigation_issue)
     unanswerable = find_unanswerable_answer(answer) if answer else None
     if unanswerable:
         issues.append(unanswerable)

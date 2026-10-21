@@ -3,6 +3,7 @@
 import logging
 import re
 import time
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,24 +50,49 @@ NOISE_PATTERNS = [
     r'(?i)^Skor maksimal\s+\d+.*$',
     r'(?i)^Nama Kriteria Skor Paraf guru.*$',
     r'(?i)^Aspek yang Dinilai Kriteria Skor.*$',
+    # Running headers/footers: "Bab 4 Belajar Bermusyawarah 91", "112 Pendidikan Pancasila untuk SD/MI Kelas VI"
+    r'(?i)^(?:\d{1,3}\s+)?Bab\s+\d{1,2}\s*\|?\s*[A-Z].{2,90}\s+\d{1,3}$',
+    r'(?i)^(?:\d{1,3}\s+)?[A-Z][\w ,]{3,80}untuk\s+SD\s*/\s*MI\s+Kelas\s+[IVX]+(?:\s*\(Edisi Revisi\))?(?:\s+\d{1,3})?$',
 ]
 
+# URLs, including ones the PDF wrapped onto the next line ("https://buku.kemdikbud.\ngo.id/s/...")
+URL_REGEX = re.compile(
+    r'(?:https?://|www\.)\S*(?:(?<=[./\-])\n\S+)*|\b(?:s\.id|bit\.ly|youtu\.be|youtube\.com)/\S+',
+    re.IGNORECASE,
+)
+# Book-navigation instructions ("Pindai barcode di samping untuk membaca ...") are not subject matter
+NAVIGATION_REGEX = re.compile(
+    r'\b(?:barcode|bar\s*code|kode\s+qr|qr\s*code|pindai\w*|memindai|scan|tautan|klik|link)\b',
+    re.IGNORECASE,
+)
+NAVIGATION_SENTENCE_MAX_CHARS = 300
+
+CHAPTER_KEYWORDS = r'(?:Bab|Unit|Tema|Modul|Pelajaran|Pembelajaran)'
+CHAPTER_NUMBER = r'([0-9]{1,2}|[IVX]{1,5})\b'
+
+# Running header/footer line: "Bab 4 | Judul 91", "Bab 4 Judul 91", "12 Bab 4 Judul", "BAB 2: Judul"
 CHAPTER_RUNNING_REGEX = re.compile(
-    r'(?i)\b(?:Bab|Unit|Tema|Modul|Pelajaran)\s+([0-9IVXLCDM]+)\s*(?:\||:|\s)\s*([^\n\r\|0-9\.\,\:\;\!\?]{3,80})',
-    re.IGNORECASE
+    rf'^\s*(?:\d{{1,3}}\s+)?{CHAPTER_KEYWORDS}\s*{CHAPTER_NUMBER}\s*[|:]?\s*([A-Za-z].{{2,90}}?)\s*\d{{0,3}}\s*$',
+    re.IGNORECASE | re.MULTILINE,
 )
+# Chapter opener line anchored at the start, so prose like "Ingat, di Bab 2 kamu ..." never matches
 CHAPTER_OPENER_REGEX = re.compile(
-    r'(?i)^\s*(?:BAB|UNIT|TEMA|MODUL|CHAPTER|PEMBELAJARAN)\s+([0-9IVXLCDM]+)(?:[\s:\.\-–—\|]+([^\n\r\.\,\:\;\!\?]{3,80}))?$',
-    re.MULTILINE
+    rf'^\s*{CHAPTER_KEYWORDS}\s+{CHAPTER_NUMBER}(?:\s*[:.|\-–—]?\s*(.*))?$',
+    re.IGNORECASE,
 )
+MIN_TITLE_VOTES = 3
+MAX_TITLE_CHARS = 80
 
 
 @dataclass
 class ChapterInfo:
     """Structured chapter metadata."""
-    number: str
+    number: int
     title: str
-    full_label: str
+
+    @property
+    def full_label(self) -> str:
+        return chapter_label(self.number, self.title)
 
 
 @dataclass
@@ -109,6 +135,46 @@ def normalize_text_fonts(text: str) -> str:
         fixed_line = re.sub(r'\b([A-Za-z0-9])\s+\1\b', r'\1', fixed_line)
         fixed_lines.append(fixed_line)
     return "\n".join(fixed_lines)
+
+
+def to_chapter_number(raw: str) -> int | None:
+    """'3', '03', 'III' -> 3; anything else (or 0) -> None."""
+    raw = raw.strip().upper()
+    value = ROMAN_MAP.get(raw, raw)
+    return int(value) if value.isdigit() and int(value) > 0 else None
+
+
+def clean_chapter_title(title: str) -> str:
+    """Strip separators, a trailing page number and repeated whitespace from a chapter title."""
+    title = re.sub(r'\s+', ' ', title).strip(" :.-–—|")
+    return re.sub(r'\s+\d{1,3}$', '', title).strip(" :.-–—|")
+
+
+def chapter_label(number: int, title: str | None) -> str:
+    return f"Bab {number}: {title}" if title else f"Bab {number}"
+
+
+def is_valid_toc_title(title: str) -> bool:
+    """Reject TOC titles mangled by multi-column layouts ('Kata Pengantar iii Mengamalkan ...', '... 1. Indahnya ...')."""
+    if not 3 <= len(title) <= MAX_TITLE_CHARS:
+        return False
+    if re.search(r'(?i)kata pengantar|prakata|daftar|glosarium|pengenalan tokoh|penjelasan fitur', title):
+        return False
+    if re.search(r'\b(?:ii|iii|iv|vi|vii|viii|ix|xi|xii|xiii|xiv)\b', title):  # roman page numbers
+        return False
+    return not re.search(r'(?:^|\s)(?:\d{1,2}|[A-Z])\.\s', title)  # sub-items "1. ..." / "A. ..."
+
+
+def _title_key(title: str) -> str:
+    return re.sub(r'[^a-z0-9]', '', title.lower())
+
+
+def same_title(a: str, b: str) -> bool:
+    """Loose title equality: ignores case/punctuation and tolerates a truncated or extended variant."""
+    ka, kb = _title_key(a), _title_key(b)
+    if len(ka) < 4 or len(kb) < 4:
+        return ka == kb
+    return ka.startswith(kb) or kb.startswith(ka)
 
 
 def parse_toc_from_pages(raw_pages: list[str]) -> list[ChapterInfo]:
@@ -155,11 +221,9 @@ def parse_toc_from_pages(raw_pages: list[str]) -> list[ChapterInfo]:
     )
 
     for m in chap_pattern.finditer(combined_toc):
-        raw_num = m.group(1).upper()
-        if raw_num in ['DI', 'DAN', 'KE', 'DARI']:
+        norm_num = to_chapter_number(m.group(1))
+        if norm_num is None:
             continue
-        norm_num = ROMAN_MAP.get(raw_num, raw_num)
-        norm_num = str(int(norm_num)) if norm_num.isdigit() else norm_num
         raw_title = m.group(2).strip()
 
         lines = [l.strip() for l in raw_title.split('\n') if l.strip()]
@@ -177,160 +241,162 @@ def parse_toc_from_pages(raw_pages: list[str]) -> list[ChapterInfo]:
             if cleaned and not re.match(r'^\d+$', cleaned) and cleaned.lower() not in ['hal', 'halaman']:
                 title_parts.append(cleaned)
 
-        title = " ".join(title_parts).strip()
-        title = re.sub(r'\s+', ' ', title)
-
-        if title:
-            full_label = f"Bab {norm_num}: {title}"
-        else:
-            full_label = f"Bab {norm_num}"
+        title = clean_chapter_title(" ".join(title_parts))
 
         if not any(c.number == norm_num for c in chapters):
-            chapters.append(ChapterInfo(number=norm_num, title=title, full_label=full_label))
+            chapters.append(ChapterInfo(number=norm_num, title=title))
 
     return chapters
 
 
-def detect_chapter_opener(page_norm: str, toc_map: dict[str, ChapterInfo]) -> ChapterInfo | None:
-    """Detect if a page is a chapter opening page using multiple signals + TOC mapping."""
-    lines = [l.strip() for l in page_norm.split('\n') if l.strip()]
+def _page_lines(page_norm: str) -> list[str]:
+    return [line.strip() for line in page_norm.split('\n') if line.strip()]
+
+
+def _edge_lines(lines: list[str]) -> list[str]:
+    """Lines where running headers/footers live (top two and bottom two), without duplicates."""
+    return list(dict.fromkeys(lines[:2] + lines[-2:]))
+
+
+def match_running_header(line: str) -> tuple[int, str] | None:
+    """Parse a running header/footer line into (chapter number, title)."""
+    if '...' in line:
+        return None
+    m = CHAPTER_RUNNING_REGEX.match(line)
+    if not m:
+        return None
+    number = to_chapter_number(m.group(1))
+    title = clean_chapter_title(m.group(2))
+    if number is None or len(title) <= 2:
+        return None
+    return number, title
+
+
+def vote_running_titles(page_norms: list[str], min_votes: int = MIN_TITLE_VOTES) -> dict[int, str]:
+    """Most frequent running-header title per chapter number (titles seen fewer than `min_votes` times are ignored)."""
+    votes: Counter[tuple[int, str]] = Counter()
+    for norm in page_norms:
+        for line in _edge_lines(_page_lines(norm)):
+            parsed = match_running_header(line)
+            if parsed:
+                votes[parsed] += 1
+    titles: dict[int, str] = {}
+    for (number, title), count in votes.most_common():
+        if count >= min_votes and number not in titles and len(title) <= MAX_TITLE_CHARS:
+            titles[number] = title
+    return titles
+
+
+def resolve_chapter_titles(page_norms: list[str], toc_chapters: list[ChapterInfo]) -> dict[int, str]:
+    """Chapter titles by number: running-header votes win over TOC titles, which are often mangled by layout."""
+    titles = {c.number: c.title for c in toc_chapters if c.title and is_valid_toc_title(c.title)}
+    titles.update(vote_running_titles(page_norms))
+    return titles
+
+
+def _cover_title(lines: list[str]) -> str:
+    """Title lines that follow the chapter number on a Kemdikbud chapter cover."""
+    title_lines: list[str] = []
+    for t_line in lines[:5]:
+        if any(k in t_line.lower() for k in ['penulis', 'isbn', 'kementerian', 'republik', 'pendidikan']):
+            continue
+        if any(t_line.lower().startswith(q) for q in ['bagaimana', 'mengapa', 'apakah', 'pernahkah', 'tahukah', 'siapakah', 'kapan', 'di mana', 'mari', 'pada bab']):
+            break
+        if t_line.endswith(('?', '!', '.', ':', ';')):
+            cleaned_t = t_line.strip(" :.-–—|!?")
+            if cleaned_t and len(cleaned_t) < 50:
+                title_lines.append(cleaned_t)
+            break
+        if len(t_line) < 50:
+            title_lines.append(t_line.strip(" :.-–—|!?"))
+    return clean_chapter_title(" ".join(title_lines))
+
+
+def detect_chapter_opener(page_norm: str, titles: dict[int, str], current: int = 0) -> tuple[int, str] | None:
+    """Detect a chapter opening page; returns (number, title found on the page or '').
+
+    `current` is the active chapter: a bare title match only counts for the next one, since readings inside
+    a chapter may share a later chapter's title (PP Kelas 3 has a reading "Berbeda Itu Indah" in Bab 1).
+    """
+    lines = _page_lines(page_norm)
     if not lines:
         return None
 
-    # 1. Look for explicit "Bab <num>" in top lines
     for idx, line in enumerate(lines[:10]):
-        # Match single-line "Bab 1", "Bab 1: Judul", "Bab 1 | Judul"
-        m = re.search(r'\b(?:Bab|Unit|Tema|Pelajaran|Pembelajaran)\s+([0-9IVXLCDM]+)(?:[\s:\.\-–—\|]+(.*))?$', line, re.IGNORECASE)
-        if m and "..." not in line:
-            num = m.group(1).upper()
-            if num in ['DI', 'DAN', 'KE', 'DARI']:
-                continue
-            num = ROMAN_MAP.get(num, num)
-            num = str(int(num)) if num.isdigit() else num
-            inline_title = (m.group(2) or "").strip(" :.-–—|")
-            inline_title = re.sub(r'\s+\d+$', '', inline_title).strip()
+        # 1. "Bab 1", "Bab 1: Judul", "Bab 1 | Judul" at the start of a line
+        m = CHAPTER_OPENER_REGEX.match(line)
+        if m and '...' not in line:
+            number = to_chapter_number(m.group(1))
+            inline_title = clean_chapter_title(m.group(2) or "")
+            if number is not None:
+                known = titles.get(number)
+                if not inline_title:
+                    return number, ""
+                if known and same_title(inline_title, known):
+                    return number, known
+                if not known and len(inline_title) < 60 and inline_title[0].isupper():
+                    return number, inline_title
+                # "Bab 2 kamu sudah belajar ..." is prose, not an opener
 
-            if num in toc_map:
-                return toc_map[num]
-            elif inline_title and len(inline_title) > 2:
-                return ChapterInfo(number=num, title=inline_title, full_label=f"Bab {num}: {inline_title}")
-            else:
-                return ChapterInfo(number=num, title="", full_label=f"Bab {num}")
-
-        # Match multiline "Bab" followed by "<num>" on next line
-        if re.match(r'^(?:Bab|Unit|Tema|Pelajaran|Pembelajaran)$', line, re.IGNORECASE) and idx + 1 < len(lines):
-            next_line = lines[idx + 1].strip()
-            num_match = re.match(r'^([0-9IVXLCDM]+)$', next_line, re.IGNORECASE)
+        # 2. "Bab" on its own line followed by the number
+        if re.match(rf'^{CHAPTER_KEYWORDS}$', line, re.IGNORECASE) and idx + 1 < len(lines):
+            num_match = re.match(r'^([0-9]{1,2}|[IVX]{1,5})$', lines[idx + 1], re.IGNORECASE)
             if num_match:
-                num = num_match.group(1).upper()
-                if num in ['DI', 'DAN', 'KE', 'DARI']:
-                    continue
-                num = ROMAN_MAP.get(num, num)
-                num = str(int(num)) if num.isdigit() else num
-                if num in toc_map:
-                    return toc_map[num]
-                title_cand = lines[idx + 2].strip() if idx + 2 < len(lines) else ""
-                if title_cand and len(title_cand) < 60 and not re.match(r'^\d+$', title_cand):
-                    return ChapterInfo(number=num, title=title_cand, full_label=f"Bab {num}: {title_cand}")
-                return ChapterInfo(number=num, title="", full_label=f"Bab {num}")
+                number = to_chapter_number(num_match.group(1))
+                if number is not None:
+                    title_cand = lines[idx + 2] if idx + 2 < len(lines) else ""
+                    if len(title_cand) >= 60 or title_cand.isdigit():
+                        title_cand = ""
+                    return number, clean_chapter_title(title_cand)
 
-    # 2. Look for Kemdikbud chapter cover patterns where "Bab" and "<num>" appear in header block
+    # 3. Kemdikbud chapter cover: "Bab" somewhere in the header block and the number on its own line
     for idx, line in enumerate(lines[:6]):
         if re.search(r'\bBab\b', line, re.IGNORECASE):
-            for s_idx, sub_line in enumerate(lines[idx:idx+6]):
-                m_num = re.match(r'^\s*([0-9]{1,2}|[IVXLCDM]+)\s*$', sub_line)
+            for s_idx, sub_line in enumerate(lines[idx:idx + 6]):
+                m_num = re.match(r'^\s*([0-9]{1,2}|[IVX]{1,5})\s*$', sub_line)
                 if m_num:
-                    num = m_num.group(1).upper()
-                    if num not in ['DI', 'DAN', 'KE', 'DARI']:
-                        num = ROMAN_MAP.get(num, num)
-                        num = str(int(num)) if num.isdigit() else num
-                        if num in toc_map:
-                            return toc_map[num]
-                        title_lines = []
-                        for t_line in lines[idx + s_idx + 1: idx + s_idx + 6]:
-                            if any(k in t_line.lower() for k in ['penulis', 'isbn', 'kementerian', 'republik', 'pendidikan']):
-                                continue
-                            if any(t_line.lower().startswith(q) for q in ['bagaimana', 'mengapa', 'apakah', 'pernahkah', 'tahukah', 'siapakah', 'kapan', 'di mana', 'mari', 'pada bab']):
-                                break
-                            if t_line.endswith(('?', '!', '.', ':', ';')):
-                                cleaned_t = t_line.strip(" :.-–—|!?")
-                                if cleaned_t and len(cleaned_t) < 50:
-                                    title_lines.append(cleaned_t)
-                                break
-                            if len(t_line) < 50:
-                                title_lines.append(t_line.strip(" :.-–—|!?"))
-                        title = " ".join(title_lines).strip()
-                        if title:
-                            return ChapterInfo(number=num, title=title, full_label=f"Bab {num}: {title}")
-                        return ChapterInfo(number=num, title="", full_label=f"Bab {num}")
+                    number = to_chapter_number(m_num.group(1))
+                    if number is not None:
+                        return number, _cover_title(lines[idx + s_idx + 1: idx + s_idx + 6])
 
-    # 3. Match known TOC chapter titles directly if they appear prominently in top lines
-    for ch_info in toc_map.values():
-        if ch_info.title and len(ch_info.title) > 4:
-            for line in lines[:8]:
-                if ch_info.title.lower() in line.lower() and len(line) < len(ch_info.title) + 15:
-                    return ch_info
+    # 4. The next chapter's title shown prominently near the top
+    next_title = titles.get(current + 1, "")
+    if len(next_title) > 4:
+        for line in lines[:8]:
+            if next_title.lower() in line.lower() and len(line) < len(next_title) + 15:
+                return current + 1, next_title
 
     return None
 
 
-def detect_chapter_running_header(page_norm: str, toc_map: dict[str, ChapterInfo]) -> ChapterInfo | None:
-    """Extract chapter from running header/footer, safely filtering out false positives."""
-    lines = [l.strip() for l in page_norm.split('\n') if l.strip()]
-    if not lines:
-        return None
-
-    candidate_lines = lines[:2] + lines[-2:]
-    for line in candidate_lines:
-        m = CHAPTER_RUNNING_REGEX.search(line)
-        if m and "..." not in line:
-            num = m.group(1).upper()
-            if num in ['DI', 'DAN', 'KE', 'DARI', 'PADA']:
-                continue
-            num = ROMAN_MAP.get(num, num)
-            num = str(int(num)) if num.isdigit() else num
-
-            raw_title = m.group(2).strip(" :.-–—|")
-            raw_title = re.sub(r'\s+\d+$', '', raw_title).strip()
-
-            if num in toc_map:
-                return toc_map[num]
-            elif raw_title and len(raw_title) > 2:
-                return ChapterInfo(number=num, title=raw_title, full_label=f"Bab {num}: {raw_title}")
-            else:
-                return ChapterInfo(number=num, title="", full_label=f"Bab {num}")
-
+def detect_chapter_running_header(page_norm: str, titles: dict[int, str]) -> tuple[int, str] | None:
+    """Chapter from a running header/footer; when the title is known it must match, filtering out prose mentions."""
+    for line in _edge_lines(_page_lines(page_norm)):
+        parsed = match_running_header(line)
+        if not parsed:
+            continue
+        number, title = parsed
+        known = titles.get(number)
+        if known is None or same_title(title, known):
+            return number, known or title
     return None
 
 
 def extract_chapter_from_raw_page(raw_text: str) -> str | None:
-    """Extract chapter identifier from raw page text (compatibility helper)."""
+    """Chapter label from a single raw page (running header first, then an opener line)."""
     if not raw_text:
         return None
-    norm = normalize_text_fonts(raw_text)
-
-    m_running = CHAPTER_RUNNING_REGEX.search(norm)
-    if m_running:
-        num = m_running.group(1).upper()
-        if num not in ['DI', 'DAN', 'KE', 'DARI', 'PADA']:
-            num = ROMAN_MAP.get(num, num)
-            num = str(int(num)) if num.isdigit() else num
-            title = m_running.group(2).strip(" :.-–—|")
-            title = re.sub(r'\s+\d+$', '', title).strip()
-            return f"Bab {num}: {title}" if title else f"Bab {num}"
-
-    for line in norm.split('\n')[:8]:
-        line_clean = line.strip()
-        m_open = CHAPTER_OPENER_REGEX.match(line_clean)
-        if m_open and "..." not in line_clean:
-            num = m_open.group(1).upper()
-            if num not in ['DI', 'DAN', 'KE', 'DARI', 'PADA']:
-                num = ROMAN_MAP.get(num, num)
-                num = str(int(num)) if num.isdigit() else num
-                title = (m_open.group(2) or "").strip(" :.-–—|")
-                title = re.sub(r'\s+\d+$', '', title).strip()
-                return f"Bab {num}: {title}" if title else f"Bab {num}"
-
+    lines = _page_lines(normalize_text_fonts(raw_text))
+    for line in lines:
+        parsed = match_running_header(line)
+        if parsed:
+            return chapter_label(*parsed)
+    for line in lines[:8]:
+        m = CHAPTER_OPENER_REGEX.match(line)
+        if m and '...' not in line:
+            number = to_chapter_number(m.group(1))
+            if number is not None:
+                return chapter_label(number, clean_chapter_title(m.group(2) or ""))
     return None
 
 
@@ -426,113 +492,73 @@ def find_main_content_start(raw_pages: list[tuple[int, str]]) -> int:
     return 8
 
 
-def extract_pages_from_pdf(file_path: Path) -> list[PageContent]:
-    """Extract pages as a list of PageContent objects with front/back matter filtering and chapter tracking."""
-    pages_data: list[PageContent] = []
-
+def _read_raw_pages(file_path: Path) -> list[tuple[int, str]]:
+    """(1-indexed page number, raw text) for every page; pdfplumber first, pypdf as fallback."""
     try:
         logger.info("Using pdfplumber (primary extractor) for: %s", file_path.name)
         with pdfplumber.open(file_path) as pdf:
-            total_pages = len(pdf.pages)
-            raw_pages = [(i + 1, pdf.pages[i].extract_text() or "") for i in range(total_pages)]
-
-        # 1. Parse TOC to obtain authoritative chapter list
-        toc_chapters = parse_toc_from_pages([text for _, text in raw_pages])
-        toc_map = {c.number: c for c in toc_chapters}
-
-        # 2. Pinpoint Chapter 1 start page
-        main_start_idx = find_main_content_start(raw_pages)
-        logger.info("Main content start confirmed at Page %d", main_start_idx + 1)
-
-        # 3. Extract body pages and track active chapter
-        current_chapter: ChapterInfo | None = toc_map.get('1') or (toc_chapters[0] if toc_chapters else ChapterInfo(number='1', title='', full_label='Bab 1'))
-
-        for i in range(main_start_idx, total_pages):
-            p_num, raw_text = raw_pages[i]
-            norm = normalize_text_fonts(raw_text)
-            lines = [l.strip() for l in norm.split('\n') if l.strip()]
-            if not lines:
-                continue
-
-            # Back matter detection (only in last 30% of document)
-            if i > total_pages * 0.70:
-                is_bm = False
-                for l in lines[:4]:
-                    l_lower = l.lower()
-                    if any(bm in l_lower for bm in BACK_MATTER_TITLES):
-                        is_bm = True
-                        break
-                if is_bm:
-                    logger.info("Back-matter reached at Page %d, stopping extraction.", p_num)
-                    break
-
-            ch_open = detect_chapter_opener(norm, toc_map)
-            if ch_open:
-                current_chapter = ch_open
-            else:
-                ch_run = detect_chapter_running_header(norm, toc_map)
-                if ch_run:
-                    current_chapter = ch_run
-
-            cleaned = clean_text(raw_text)
-            if cleaned:
-                pages_data.append(
-                    PageContent(
-                        page_number=p_num,
-                        text=cleaned,
-                        chapter=current_chapter.full_label if current_chapter else None
-                    )
-                )
-
-        logger.info("Extracted %d main content pages out of %d total pages", len(pages_data), total_pages)
-
+            return [(i + 1, page.extract_text() or "") for i, page in enumerate(pdf.pages)]
     except Exception as e:
         logger.warning("pdfplumber extraction encountered an issue (%s), falling back to pypdf", e)
         reader = PdfReader(file_path)
-        total_pages = len(reader.pages)
-        raw_pages = [(i + 1, reader.pages[i].extract_text() or "") for i in range(total_pages)]
+        return [(i + 1, page.extract_text() or "") for i, page in enumerate(reader.pages)]
 
-        toc_chapters = parse_toc_from_pages([text for _, text in raw_pages])
-        toc_map = {c.number: c for c in toc_chapters}
 
-        main_start_idx = find_main_content_start(raw_pages)
-        current_chapter = toc_map.get('1') or (toc_chapters[0] if toc_chapters else ChapterInfo(number='1', title='', full_label='Bab 1'))
+def _is_back_matter(lines: list[str]) -> bool:
+    return any(bm in line.lower() for line in lines[:4] for bm in BACK_MATTER_TITLES)
 
-        for i in range(main_start_idx, total_pages):
-            p_num, raw_text = raw_pages[i]
-            norm = normalize_text_fonts(raw_text)
-            lines = [l.strip() for l in norm.split('\n') if l.strip()]
-            if not lines:
-                continue
 
-            if i > total_pages * 0.70:
-                is_bm = False
-                for l in lines[:4]:
-                    if any(bm in l.lower() for bm in BACK_MATTER_TITLES):
-                        is_bm = True
-                        break
-                if is_bm:
-                    break
+def build_pages(raw_pages: list[tuple[int, str]]) -> list[PageContent]:
+    """Trim front/back matter and attach a chapter label to every main-content page.
 
-            ch_open = detect_chapter_opener(norm, toc_map)
-            if ch_open:
-                current_chapter = ch_open
-            else:
-                ch_run = detect_chapter_running_header(norm, toc_map)
-                if ch_run:
-                    current_chapter = ch_run
+    Chapters only move forward: an opener must name a later chapter (at most two ahead, in case one opener
+    was missed) and a running header the current or next one, so a passing mention such as
+    "Ingat, di Bab 2 kamu sudah belajar ..." on a Bab 6 page can't pull the page back.
+    """
+    total_pages = len(raw_pages)
+    toc_chapters = parse_toc_from_pages([text for _, text in raw_pages])
+    main_start_idx = find_main_content_start(raw_pages)
+    logger.info("Main content start confirmed at Page %d", main_start_idx + 1)
 
-            cleaned = clean_text(raw_text)
-            if cleaned:
-                pages_data.append(
-                    PageContent(
-                        page_number=p_num,
-                        text=cleaned,
-                        chapter=current_chapter.full_label if current_chapter else None
-                    )
-                )
+    # Main-content pages up to the back matter
+    body: list[tuple[int, str, str]] = []  # (page number, raw text, normalized text)
+    for i in range(main_start_idx, total_pages):
+        p_num, raw_text = raw_pages[i]
+        norm = normalize_text_fonts(raw_text)
+        lines = _page_lines(norm)
+        if not lines:
+            continue
+        if i > total_pages * 0.70 and _is_back_matter(lines):
+            logger.info("Back-matter reached at Page %d, stopping extraction.", p_num)
+            break
+        body.append((p_num, raw_text, norm))
 
+    titles = resolve_chapter_titles([norm for _, _, norm in body], toc_chapters)
+    current = 1
+
+    pages_data: list[PageContent] = []
+    for p_num, raw_text, norm in body:
+        opener = detect_chapter_opener(norm, titles, current)
+        if opener and current < opener[0] <= current + 2:
+            current = opener[0]
+            titles.setdefault(current, opener[1])
+        else:
+            running = detect_chapter_running_header(norm, titles)
+            if running and current <= running[0] <= current + 1:
+                current = running[0]
+                titles.setdefault(current, running[1])
+
+        cleaned = clean_text(raw_text)
+        if cleaned:
+            pages_data.append(PageContent(page_number=p_num, text=cleaned, chapter=chapter_label(current, titles.get(current))))
+
+    logger.info("Extracted %d main content pages out of %d total pages", len(pages_data), total_pages)
     return pages_data
+
+
+def extract_pages_from_pdf(file_path: Path) -> list[PageContent]:
+    """Extract pages as a list of PageContent objects with front/back matter filtering and chapter tracking."""
+    return build_pages(_read_raw_pages(file_path))
 
 
 def extract_text_from_pdf(file_path: Path) -> str:
@@ -543,30 +569,40 @@ def extract_text_from_pdf(file_path: Path) -> str:
     return full_text
 
 
+def _strip_url(match: re.Match[str]) -> str:
+    # Keep a sentence-ending period that the URL pattern swallowed
+    return "." if match.group(0).endswith(".") else ""
+
+
+def drop_navigation_sentences(text: str) -> str:
+    """Remove sentences that tell the reader to scan a barcode or open a link (only those lines, for long run-ons)."""
+    parts = re.split(r'(?<=[.!?])(\s+)', text)
+    kept: list[str] = []
+    for part in parts:
+        if part.strip() and NAVIGATION_REGEX.search(part):
+            if len(part) <= NAVIGATION_SENTENCE_MAX_CHARS:
+                continue
+            part = "\n".join(line for line in part.split("\n") if not NAVIGATION_REGEX.search(line))
+        kept.append(part)
+    return "".join(kept)
+
+
 def clean_text(text: str) -> str:
-    """Remove noise lines, headers, footers, page numbers, and excessive whitespace."""
+    """Remove noise lines, running headers/footers, page numbers, links, barcode instructions and excess whitespace."""
     if not text:
         return ""
     text_norm = normalize_text_fonts(text)
-    lines = text_norm.split('\n')
     cleaned_lines = []
 
-    for line in lines:
+    for line in text_norm.split('\n'):
         line_str = line.strip()
-        if not line_str:
-            continue
-
-        is_noise = False
-        for pat in NOISE_PATTERNS:
-            if re.match(pat, line_str, re.IGNORECASE):
-                is_noise = True
-                break
-
-        if not is_noise:
+        if line_str and not any(re.match(pat, line_str, re.IGNORECASE) for pat in NOISE_PATTERNS):
             cleaned_lines.append(line_str)
 
     result = "\n".join(cleaned_lines)
-    result = re.sub(r'\n{3,}', '\n\n', result)
+    result = URL_REGEX.sub(_strip_url, result)
+    result = drop_navigation_sentences(result)
+    result = "\n".join(line.strip() for line in result.split("\n") if line.strip())
     result = re.sub(r'[ \t]{2,}', ' ', result)
     return result.strip()
 

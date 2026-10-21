@@ -141,7 +141,7 @@ Ketentuan:
 2. Untuk C3-C4, wajib sediakan stimulus_context konkret agar siswa tidak sekadar mengutip definisi. Skenario boleh fiktif, tetapi fakta yang dipakai dan penalaran yang diminta harus bisa diselesaikan dengan fakta di CONTEXT saja (jangan meminta mekanisme/akibat yang tidak dijelaskan CONTEXT).
 3. grounding_evidence harus dapat ditelusuri kembali ke CONTEXT kata per kata.
 4. question_type mengikuti recommended_question_format pada COGNITIVE PLAN.
-5. Uji konsep/fakta materi, BUKAN pengalaman aktivitas kelas siswa.
+5. Uji konsep/fakta materi, BUKAN pengalaman aktivitas kelas siswa atau petunjuk memakai buku (barcode, tautan, halaman).
 
 OUTPUT JSON:
 {{
@@ -179,7 +179,7 @@ Ketentuan:
 1. Pertanyaan harus dapat dijawab sepenuhnya dari CONTEXT, tidak boleh membutuhkan pengetahuan di luar itu.
 2. Untuk C3-C4, wajib sediakan stimulus_context konkret agar siswa tidak sekadar mengutip definisi. Skenario boleh fiktif, tetapi fakta yang dipakai dan penalaran yang diminta harus bisa diselesaikan dengan fakta di CONTEXT saja (jangan meminta mekanisme/akibat yang tidak dijelaskan CONTEXT).
 3. grounding_evidence harus dapat ditelusuri kembali ke CONTEXT kata per kata.
-4. Uji konsep/fakta materi, BUKAN pengalaman aktivitas kelas siswa.
+4. Uji konsep/fakta materi, BUKAN pengalaman aktivitas kelas siswa atau petunjuk memakai buku (barcode, tautan, halaman).
 5. Setiap butir harus menguji aspek yang BERBEDA. Jika dua butir memakai poin yang sama, pilih sudut yang berbeda (misal fungsi, proses, sebab-akibat, atau contoh) agar soalnya tidak kembar.
 6. Kembalikan tepat satu blueprint per butir, urut sesuai nomor butir.
 
@@ -231,6 +231,7 @@ Ketentuan Khusus Penulisan Soal SD:
 11. Harus Bisa Dijawab: Tanyakan hanya informasi yang benar-benar tertulis di CONTEXT. Jika CONTEXT tidak menyebut suatu detail (nama, angka, tempat), jangan tanyakan detail itu. `expected_answer` tidak boleh berbunyi "tidak disebutkan" atau sejenisnya.
 9. Satu Pertanyaan: Tulis tepat SATU pertanyaan per butir. Jangan menambahkan pertanyaan kedua (contoh salah: "Jelaskan cara bermainnya. Apa tujuannya?").
 10. Akhiri pertanyaan dengan tanda tanya (?), atau dengan titik (.) jika berupa kalimat perintah seperti "Jelaskan ..." / "Sebutkan ...".
+12. Bukan Soal Navigasi Buku: DILARANG bertanya tentang cara memakai buku, seperti memindai barcode/kode QR, membuka tautan, membuka halaman tertentu, atau menyalin ke buku tugas. Abaikan bagian CONTEXT yang berisi petunjuk semacam itu.
 
 OUTPUT JSON:
 {{
@@ -320,6 +321,7 @@ Ketentuan:
 4. Jangan menambahkan informasi dari luar CONTEXT.
 5. Pertahankan question_type dan cognitive_level yang sama.
 6. Soal harus mandiri dan berisi SATU pertanyaan; jangan merujuk pengalaman kelas ("yang telah kamu pelajari/lakukan", "di kelas", "di sekolahmu").
+7. Jangan bertanya tentang cara memakai buku (barcode/kode QR, tautan, halaman, buku tugas); tanyakan isi materinya.
 
 OUTPUT JSON:
 {{

@@ -40,6 +40,12 @@ def is_exercise_or_instruction_chunk(chunk_text: str) -> bool:
         "apa saja yang sudah kalian pelajari di bab",
         "apa yang sudah kamu pelajari mengenai",
         "tambahkan 2 pengalaman belajar lain",
+        "ayo, merenungkan",
+        "berilah tanda centang",
+        "beri tanda centang",
+        "renungan bab",
+        "salin refleksi",
+        "salin tabel berikut di buku tugas",
     ]
     if any(phrase in text_lower for phrase in reflection_phrases):
         return True
