@@ -16,20 +16,18 @@ from typing import Any, NamedTuple
 from app.core.config import get_settings
 from app.core.database import get_session
 from app.models.db_models import Chunk
-from app.services.retrieval.capacity import MIN_CHUNK_CHARS, drop_weak_matches, select_by_capacity
+from app.services.ingestion.chunkers.classifiers import ROMAN_MAP
+from app.services.retrieval.capacity import (
+    MIN_CHUNK_CHARS,
+    PREFERRED_CATEGORIES,
+    drop_weak_matches,
+    select_by_capacity,
+)
 from app.services.retrieval.dense_index import DenseIndex
 from app.services.retrieval.hybrid_search import HybridSearch, is_exercise_or_instruction_chunk
 from app.services.retrieval.sparse_index import SparseIndex
 
 logger = logging.getLogger(__name__)
-
-# Chunk categories that carry book content (activity/discussion chunks produce "what did you do in class" questions)
-PREFERRED_CHUNK_CATEGORIES = {"materi_pokok", "uraian_materi", "studi_kasus"}
-
-_ROMAN_TO_INT = {
-    "I": "1", "II": "2", "III": "3", "IV": "4", "V": "5",
-    "VI": "6", "VII": "7", "VIII": "8", "IX": "9", "X": "10",
-}
 
 # Generation meta-words that carry no topic ("buatkan 5 soal C2 bab 3 tentang ...")
 _META_PATTERNS = [
@@ -56,7 +54,7 @@ _sparse_cache: dict[str, SparseIndex] = {}
 
 
 def get_shared_dense_index() -> DenseIndex:
-    """Get or create the singleton DenseIndex (loads the embedding model once)."""
+    """Get or create the singleton DenseIndex."""
     global _dense_index
     if _dense_index is None:
         settings = get_settings()
@@ -99,7 +97,7 @@ def extract_chapter_number(chapter_str: str | None) -> str | None:
     if not match:
         return None
     val = match.group(1).upper()
-    return _ROMAN_TO_INT.get(val, val)
+    return ROMAN_MAP.get(val, val)
 
 
 def sanitize_retrieval_query(user_prompt: str) -> str:
@@ -113,26 +111,27 @@ def sanitize_retrieval_query(user_prompt: str) -> str:
     return re.sub(r'\s+', ' ', text).strip()
 
 
+def chunk_dict(c: Chunk) -> dict[str, Any]:
+    """A stored chunk in the dict shape used by retrieval and generation."""
+    return {
+        "id": c.id,
+        "text": c.text,
+        "metadata": {
+            "document_id": c.document_id,
+            "category": c.category,
+            "chapter": c.chapter or "",
+            "section_heading": c.section_heading or "",
+            "page_number": c.page_number or 1,
+            "chunk_index": c.chunk_index or 0,
+            "section_type": c.section_type or "materi_pokok",
+        },
+    }
+
+
 def load_document_chunks(document_id: str) -> list[dict[str, Any]]:
-    """All chunks of a document in the dict shape used by retrieval and generation."""
+    """All chunks of a document."""
     with get_session() as db:
-        rows = db.query(Chunk).filter(Chunk.document_id == document_id).all()
-        return [
-            {
-                "id": c.id,
-                "text": c.text,
-                "metadata": {
-                    "document_id": c.document_id,
-                    "category": c.category,
-                    "chapter": c.chapter or "",
-                    "section_heading": c.section_heading or "",
-                    "page_number": c.page_number or 1,
-                    "chunk_index": c.chunk_index or 0,
-                    "section_type": c.section_type or "materi_pokok",
-                },
-            }
-            for c in rows
-        ]
+        return [chunk_dict(c) for c in db.query(Chunk).filter(Chunk.document_id == document_id).all()]
 
 
 def filter_by_chapter(chunks: list[dict[str, Any]], chapter: str | None) -> list[dict[str, Any]]:
@@ -150,7 +149,7 @@ def _is_usable(chunk: dict[str, Any]) -> bool:
 
 
 def _is_preferred(chunk: dict[str, Any]) -> bool:
-    return (chunk.get("metadata") or {}).get("category") in PREFERRED_CHUNK_CATEGORIES
+    return (chunk.get("metadata") or {}).get("category") in PREFERRED_CATEGORIES
 
 
 def select_diverse_chunks(
@@ -199,7 +198,6 @@ def _hybrid_rank(
         top_k=limit * 2,
         document_id=document_id,
         candidate_k=settings.CANDIDATE_TOP_K,
-        enable_rerank=settings.RERANKER_ENABLED,
         chapters=chapters,
     )
     allowed = {c["id"] for c in chunks}

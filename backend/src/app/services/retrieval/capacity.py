@@ -38,7 +38,8 @@ _PROJECT_MARKERS = re.compile(
     re.IGNORECASE,
 )
 
-_PREFERRED_CATEGORIES = {"materi_pokok", "uraian_materi", "studi_kasus"}
+# Chunk categories that carry book content (activity/discussion chunks produce "what did you do in class" questions)
+PREFERRED_CATEGORIES = {"materi_pokok", "uraian_materi", "studi_kasus"}
 
 
 def informative_sentence_count(text: str) -> int:
@@ -75,13 +76,13 @@ def estimate_capacity(chunk: dict[str, Any]) -> int:
     if len(text) < MIN_CHUNK_CHARS or is_exercise_or_instruction_chunk(text) or is_project_or_instruction_chunk(text):
         return 0
     capacity = math.ceil(informative_sentence_count(text) / 2)
-    if (chunk.get("metadata") or {}).get("category") not in _PREFERRED_CATEGORIES:
+    if (chunk.get("metadata") or {}).get("category") not in PREFERRED_CATEGORIES:
         capacity -= 1
     return max(0, min(get_settings().MAX_QUESTIONS_PER_CHUNK, capacity))
 
 
 def relevance_score(chunk: dict[str, Any]) -> float | None:
-    score = chunk.get("final_score", chunk.get("rrf_score"))
+    score = chunk.get("rrf_score")
     return float(score) if score is not None else None
 
 

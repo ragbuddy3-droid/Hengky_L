@@ -19,6 +19,8 @@ dependencies = [
     "pyyaml>=6.0.3",
     "pydantic[email]>=2.14.1",
     "langchain-openai>=1.7.0",
+    "openai>=3.29.0",
+    "python-dotenv>=1.2.4",
     "bcrypt>=5.0.0",
     "pyjwt>=2.15.1",
 ]
@@ -44,37 +46,3 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 ignore = ["B008", "E501", "SIM105"]
-
-[tool.pyright]
-include = ["src", "tests"]
-exclude = [".venv", "data", "**/__pycache__"]
-extraPaths = ["src"]
-pythonVersion = "3.11"
-typeCheckingMode = "basic"
-reportMissingTypeStubs = false
-reportUnknownMemberType = false
-reportUnknownArgumentType = false
-reportUnknownVariableType = false
-reportUnknownParameterType = false
-reportAny = false
-reportExplicitAny = false
-reportUnannotatedClassAttribute = false
-reportUnusedCallResult = false
-reportImplicitStringConcatenation = false
-
-[tool.basedpyright]
-include = ["src", "tests"]
-exclude = [".venv", "data", "**/__pycache__"]
-extraPaths = ["src"]
-pythonVersion = "3.11"
-typeCheckingMode = "basic"
-reportMissingTypeStubs = false
-reportUnknownMemberType = false
-reportUnknownArgumentType = false
-reportUnknownVariableType = false
-reportUnknownParameterType = false
-reportAny = false
-reportExplicitAny = false
-reportUnannotatedClassAttribute = false
-reportUnusedCallResult = false
-reportImplicitStringConcatenation = false

@@ -2,7 +2,7 @@
 
 import logging
 
-from app.graph.state import AQGState, QuestionState
+from app.graph.state import AQGState, QuestionState, count_final
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +45,7 @@ def route_after_generation(state: AQGState) -> str:
 
 def route_after_review(state: AQGState) -> str:
     """Top up once if fewer questions passed than requested, otherwise persist."""
-    validated = state.get("validated_questions", [])
-    n_final = sum(1 for q in validated if q.get("status") == "final")
+    n_final = count_final(state.get("validated_questions", []))
     if n_final < state.get("num_questions", 5) and not state.get("top_up_done"):
         logger.info("[Edge] %d/%d passed -> top_up_questions", n_final, state.get("num_questions", 5))
         return "top_up_questions"

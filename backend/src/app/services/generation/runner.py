@@ -7,14 +7,14 @@ from typing import Any
 from app.core.database import get_session
 from app.graph.state import AQGState
 from app.graph.workflow import get_aqg_graph
-from app.models.db_models import ChatSession, Question
+from app.models.db_models import ChatSession, Chunk, Question
 from app.schemas.api_schemas import GenerateParams
 from app.services.auth.guest_quota import refund
 from app.services.chat.state_manager import ChatStateManager, session_questions
 from app.services.generation import progress
 from app.services.generation.revision import RevisionAction, revise_question
 from app.services.questions.repository import replace_question
-from app.services.retrieval.retriever import load_document_chunks
+from app.services.retrieval.retriever import chunk_dict, load_document_chunks
 from app.services.validation.quality_checks import tokens
 
 logger = logging.getLogger(__name__)
@@ -161,12 +161,14 @@ def _load_revision_input(
 
 def _source_chunk(document_id: str, chunk_ids: list[str], old: dict[str, Any]) -> dict[str, Any] | None:
     """The question's own chunk; if it is gone (document re-processed), the chunk that best contains its evidence."""
+    if chunk_ids:
+        with get_session() as db:
+            own = db.get(Chunk, chunk_ids[0])
+            if own is not None and str(own.document_id) == document_id:
+                return chunk_dict(own)
     chunks = load_document_chunks(document_id)
     if not chunks:
         return None
-    by_id = {c["id"]: c for c in chunks}
-    if chunk_ids and chunk_ids[0] in by_id:
-        return by_id[chunk_ids[0]]
     evidence = tokens(old.get("grounding_evidence") or f"{old.get('question', '')} {old.get('answer', '')}")
     best = max(chunks, key=lambda c: len(evidence & tokens(c.get("text", ""))))
     return best if evidence & tokens(best.get("text", "")) else None

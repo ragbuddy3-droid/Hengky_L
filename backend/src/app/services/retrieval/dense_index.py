@@ -63,7 +63,7 @@ class DenseIndex:
         ]
 
         logger.info("Encoding %d chunks with %s...", len(texts), self.embedding_model_name)
-        embeddings = self._model.encode(texts, show_progress_bar=False, normalize_embeddings=True).tolist()
+        embeddings = self._model.encode(texts, normalize_embeddings=True).tolist()
 
         # Batch upsert to prevent exceeding limits
         batch_size = 200
@@ -86,7 +86,8 @@ class DenseIndex:
         chapters: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Query ChromaDB with optional document_id / chapter filters and return ranked chunks."""
-        if not query_text or not query_text.strip() or self.collection.count() == 0:
+        count = self.collection.count()
+        if not query_text or not query_text.strip() or count == 0:
             return []
 
         query_emb = self._model.encode([query_text], normalize_embeddings=True).tolist()
@@ -99,7 +100,7 @@ class DenseIndex:
 
         results = self.collection.query(
             query_embeddings=query_emb,
-            n_results=min(top_k, self.collection.count()),
+            n_results=min(top_k, count),
             where=where_clause,
             include=["documents", "metadatas", "distances"]
         )

@@ -20,7 +20,7 @@ from collections.abc import Awaitable
 from typing import Any, TypeVar
 
 from app.core.config import get_settings
-from app.graph.state import AQGState, QuestionState
+from app.graph.state import AQGState, QuestionState, count_final
 from app.services.generation import progress
 from app.services.generation.analysis_cache import load_cached_analyses, store_analyses
 from app.services.generation.planner import (
@@ -107,13 +107,9 @@ async def _gather(coros: list[Awaitable[R]]) -> list[R]:
     return list(await asyncio.gather(*coros))
 
 
-def _count_final(questions: list[dict[str, Any]]) -> int:
-    return sum(1 for q in questions if q.get("status") == "final")
-
-
 # ── Shared Stage 1/2 cache ──
 
-def _analyses(stage_cache: dict[str, Any]) -> dict[str, ContentAnalysis]:
+def cached_analyses(stage_cache: dict[str, Any]) -> dict[str, ContentAnalysis]:
     return {cid: ContentAnalysis.model_validate(v["analysis"]) for cid, v in stage_cache.get("analyses", {}).items()}
 
 
@@ -125,7 +121,7 @@ def _copy_cache(stage_cache: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def _ensure_analyses(
+async def ensure_analyses(
     chunks: list[dict[str, Any]], stage_cache: dict[str, Any], session_id: str | None = None,
 ) -> dict[str, Any]:
     """Stage 1 for chunks not in the cache yet: reuse the persistent per-chunk cache, call the LLM for the rest.
@@ -156,7 +152,7 @@ async def _ensure_analyses(
     return cache
 
 
-async def _ensure_plans(
+async def ensure_plans(
     document_id: str, levels: list[str], stage_cache: dict[str, Any], session_id: str | None = None,
 ) -> dict[str, Any]:
     """Stage 2 (+ few-shot examples) for Bloom levels not planned yet, from a topic/concept summary only."""
@@ -167,7 +163,7 @@ async def _ensure_plans(
 
     progress.phase(session_id, "planning", "Merencanakan level kognitif soal…")
     planning_model = get_chat_model(is_judge=False, temperature=0.2)
-    summary = planning_summary(list(_analyses(cache).values()))
+    summary = planning_summary(list(cached_analyses(cache).values()))
     stage2 = await _gather([
         run_stage2_cognitive_planning(planning_model, summary, lvl, 1) for lvl in new_levels
     ])
@@ -177,7 +173,7 @@ async def _ensure_plans(
     return cache
 
 
-def _validation_input(
+def validation_input(
     q: dict[str, Any], session_id: str | None, session_bloom_level: str | None, candidate_id: str,
 ) -> QuestionState:
     """Isolated QuestionState for one candidate: its own context, traces, and an empty log."""
@@ -207,7 +203,7 @@ async def validate_candidate(state: QuestionState) -> dict[str, Any]:
     return q
 
 
-async def _generate_and_validate(
+async def generate_and_validate(
     state: AQGState,
     chunks: list[dict[str, Any]],
     items: list[dict[str, Any]],
@@ -226,7 +222,7 @@ async def _generate_and_validate(
     target = state.get("num_questions", 5)
     chunk_by_id = {c["id"]: c for c in chunks}
     generation_model = get_chat_model(is_judge=False, temperature=0.4)
-    analyses = _analyses(stage_cache)
+    analyses = cached_analyses(stage_cache)
     plans = {lvl: CognitivePlan.model_validate(v["plan"]) for lvl, v in stage_cache["plans"].items()}
 
     groups: dict[str, list[int]] = {}
@@ -240,7 +236,7 @@ async def _generate_and_validate(
     validated: list[dict[str, Any]] = []
     seen = list(existing)  # questions a new candidate must not duplicate
     open_ids = set(ids)
-    finals_before = _count_final(existing)
+    finals_before = count_final(existing)
     target_reached = asyncio.Event()
 
     def _close(cid: str, status: str, q: dict[str, Any] | None = None) -> None:
@@ -289,10 +285,10 @@ async def _generate_and_validate(
             return
         seen.append(q)
 
-        result = await validate_candidate(_validation_input(q, session_id, state.get("bloom_level"), cid))
+        result = await validate_candidate(validation_input(q, session_id, state.get("bloom_level"), cid))
         validated.append(result)
         _close(cid, result.get("status", "needs_review"), result)
-        if finals_before + _count_final(validated) >= target:
+        if finals_before + count_final(validated) >= target:
             target_reached.set()
 
     async def _chunk_group(chunk_id: str, indices: list[int]) -> None:
@@ -372,8 +368,8 @@ async def generate_questions(state: AQGState) -> dict[str, Any]:
     reserve = list(state.get("reserve_chunks", []))
     levels = assign_bloom_levels(candidate_count(state.get("num_questions", 5)), state.get("bloom_level"))
 
-    stage_cache = await _ensure_analyses(retrieved, {}, session_id)
-    point_lists = chunk_point_lists(retrieved, _analyses(stage_cache))
+    stage_cache = await ensure_analyses(retrieved, {}, session_id)
+    point_lists = chunk_point_lists(retrieved, cached_analyses(stage_cache))
     for _ in range(_EXPANSION_ROUNDS):
         short = len(levels) - real_capacity(point_lists, max_per_chunk)
         if short <= 0 or not reserve:
@@ -383,21 +379,21 @@ async def generate_questions(state: AQGState) -> dict[str, Any]:
             break
         logger.info("[Node 2] Capacity short by %d; analysing %d reserve chunk(s).", short, len(new_chunks))
         retrieved += new_chunks
-        stage_cache = await _ensure_analyses(new_chunks, stage_cache, session_id)
-        point_lists = chunk_point_lists(retrieved, _analyses(stage_cache))
+        stage_cache = await ensure_analyses(new_chunks, stage_cache, session_id)
+        point_lists = chunk_point_lists(retrieved, cached_analyses(stage_cache))
 
     items, spare_items = allocate_items(point_lists, levels, max_per_chunk)
     if not items:
         return {"validated_questions": [], "error": "Materi yang ditemukan tidak memuat poin yang dapat dijadikan soal."}
-    stage_cache = await _ensure_plans(state["document_id"], [it["bloom_level"] for it in items], stage_cache, session_id)
+    stage_cache = await ensure_plans(state["document_id"], [it["bloom_level"] for it in items], stage_cache, session_id)
     logger.info(
         "[Node 2] %d candidates from %d chunks (real capacity %d).",
         len(items), len({it["chunk_id"] for it in items}), real_capacity(point_lists, max_per_chunk),
     )
 
     progress.phase(session_id, "generation", f"Membuat dan memvalidasi {len(items)} kandidat soal…")
-    validated = await _generate_and_validate(state, retrieved, items, stage_cache, "r1", existing=[])
-    logger.info("[Node 2] %d of %d candidates validated (%d final).", len(validated), len(items), _count_final(validated))
+    validated = await generate_and_validate(state, retrieved, items, stage_cache, "r1", existing=[])
+    logger.info("[Node 2] %d of %d candidates validated (%d final).", len(validated), len(items), count_final(validated))
 
     return {
         "validated_questions": validated,
@@ -413,7 +409,7 @@ def review_results(state: AQGState) -> dict[str, Any]:
     """Summarize the validated questions so far (after generation or top-up)."""
     validated = state.get("validated_questions", [])
     logger.info("[Node Review] %d/%d candidates passed (target %d).",
-                _count_final(validated), len(validated), state.get("num_questions", 5))
+                count_final(validated), len(validated), state.get("num_questions", 5))
     return {}
 
 
@@ -426,7 +422,7 @@ async def top_up_questions(state: AQGState) -> dict[str, Any]:
     """
     session_id = state.get("session_id")
     validated = state.get("validated_questions", [])
-    count = max(0, state.get("num_questions", 5) - _count_final(validated)) + 1
+    count = max(0, state.get("num_questions", 5) - count_final(validated)) + 1
 
     # Keep the requested level mix: replace failed questions with the same levels
     failed = [q for q in validated if q.get("status") != "final"]
@@ -441,9 +437,9 @@ async def top_up_questions(state: AQGState) -> dict[str, Any]:
         new_chunks, reserve = select_by_capacity(reserve, count - len(spare), len(reserve))
         if new_chunks:
             retrieved += new_chunks
-            stage_cache = await _ensure_analyses(new_chunks, stage_cache, session_id)
+            stage_cache = await ensure_analyses(new_chunks, stage_cache, session_id)
             used_points = [q.get("knowledge_point", "") for q in validated] + [s["point"] for s in spare]
-            spare += interleave(chunk_point_lists(new_chunks, _analyses(stage_cache), exclude_points=used_points))
+            spare += interleave(chunk_point_lists(new_chunks, cached_analyses(stage_cache), exclude_points=used_points))
     if len(spare) < count:
         spare += [
             {"point": q.get("knowledge_point", ""), "quote": q.get("grounding_evidence", ""), "chunk_id": q["chunk_id"]}
@@ -453,11 +449,11 @@ async def top_up_questions(state: AQGState) -> dict[str, Any]:
         return {"top_up_done": True}
 
     items, rest = allocate_items([spare], levels, max_per_chunk=len(levels))
-    stage_cache = await _ensure_plans(state["document_id"], levels, stage_cache, session_id)
+    stage_cache = await ensure_plans(state["document_id"], levels, stage_cache, session_id)
     logger.info("[Node TopUp] Generating %d replacement candidates.", len(items))
 
     progress.phase(session_id, "top_up", f"Membuat {len(items)} soal pengganti…")
-    replacements = await _generate_and_validate(state, retrieved, items, stage_cache, "r2", existing=validated)
+    replacements = await generate_and_validate(state, retrieved, items, stage_cache, "r2", existing=validated)
     return {
         "validated_questions": replacements,
         "retrieved_chunks": retrieved,
@@ -483,7 +479,7 @@ def persist_questions(state: AQGState) -> dict[str, Any]:
     saved = save_questions(state["session_id"], selected, state.get("source_chunk_ids", []))
     logger.info(
         "[Node 6] Persisted %d questions (%d final, %d needs_review) out of %d validated candidates.",
-        len(saved), _count_final(saved), len(saved) - _count_final(saved), len(validated),
+        len(saved), count_final(saved), len(saved) - count_final(saved), len(validated),
     )
     return {"finalized_questions": saved}
 

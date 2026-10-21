@@ -9,12 +9,12 @@ import logging
 from typing import Any, Literal, cast
 
 from app.graph.nodes import (
-    _analyses,
-    _ensure_analyses,
-    _ensure_plans,
-    _generate_and_validate,
-    _validation_input,
+    cached_analyses,
+    ensure_analyses,
+    ensure_plans,
+    generate_and_validate,
     validate_candidate,
+    validation_input,
 )
 from app.graph.state import AQGState
 from app.services.generation import progress
@@ -43,17 +43,17 @@ async def _regenerate(
     session_id: str, document_id: str, chunk: dict[str, Any], old: dict[str, Any], level: str,
     others: list[dict[str, Any]], stage_cache: dict[str, Any],
 ) -> dict[str, Any] | None:
-    analysis = _analyses(stage_cache)[chunk["id"]]
+    analysis = cached_analyses(stage_cache)[chunk["id"]]
     item = {**_pick_point(chunk, valid_points(chunk, analysis), old, others), "bloom_level": level}
     state: dict[str, Any] = {"session_id": session_id, "document_id": document_id, "num_questions": 1, "bloom_level": level}
-    results = await _generate_and_validate(cast(AQGState, state), [chunk], [item], stage_cache, "rv", existing=others)
+    results = await generate_and_validate(cast(AQGState, state), [chunk], [item], stage_cache, "rv", existing=others)
     return results[0] if results else None
 
 
 async def _revise(
     session_id: str, chunk: dict[str, Any], old: dict[str, Any], level: str, instruction: str, stage_cache: dict[str, Any],
 ) -> dict[str, Any]:
-    analysis = _analyses(stage_cache)[chunk["id"]]
+    analysis = cached_analyses(stage_cache)[chunk["id"]]
     plan = CognitivePlan.model_validate(stage_cache["plans"][level]["plan"])
     q_type = old.get("question_type") or "esai"
     blueprint = QuestionBlueprint(
@@ -96,7 +96,7 @@ async def _revise(
         "chunk_id": chunk["id"],
         "has_fallback": trace.has_fallback,
     }
-    result = await validate_candidate(_validation_input(q, session_id, level, _CANDIDATE_ID))
+    result = await validate_candidate(validation_input(q, session_id, level, _CANDIDATE_ID))
     progress.candidate(session_id, _CANDIDATE_ID, result.get("status", "needs_review"), result)
     return result
 
@@ -116,8 +116,8 @@ async def revise_question(
     `others` are the session's other questions, which a regenerated question must not duplicate.
     """
     target = level or old.get("bloom_level") or "C2-Memahami"
-    stage_cache = await _ensure_analyses([chunk], {}, session_id)
-    stage_cache = await _ensure_plans(document_id, [target], stage_cache, session_id)
+    stage_cache = await ensure_analyses([chunk], {}, session_id)
+    stage_cache = await ensure_plans(document_id, [target], stage_cache, session_id)
     logger.info("[Revision] %s question (level %s) from chunk '%s'.", action, target, source_reference(chunk)[:60])
 
     if action == "regenerate":

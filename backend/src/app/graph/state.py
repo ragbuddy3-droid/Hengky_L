@@ -47,3 +47,7 @@ class QuestionState(TypedDict):
     judge_evaluation: dict[str, Any] | None
     validation_logs: list[dict[str, Any]]
     stage_traces: list[dict[str, Any]]
+
+
+def count_final(questions: list[dict[str, Any]]) -> int:
+    return sum(1 for q in questions if q.get("status") == "final")

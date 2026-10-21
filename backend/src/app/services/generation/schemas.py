@@ -34,8 +34,6 @@ class ContentAnalysis(_LenientModel):
     processes: list[str] = Field(default_factory=list, description="Proses atau tahapan jika ada")
     testable_content: list[TestableContentItem] = Field(default_factory=list, description="Poin materi yang dapat diuji")
 
-    model_config = ConfigDict(extra="ignore")
-
 
 class CognitivePlan(_LenientModel):
     """Output of Stage 2 — Cognitive Bloom Planning."""
@@ -48,8 +46,6 @@ class CognitivePlan(_LenientModel):
     recommended_question_format: str = Field(default="esai", description="Format soal (isian_singkat / esai_pendek / esai)")
     prohibited_question_pattern: list[str] = Field(default_factory=list, description="Pola pertanyaan yang dilarang")
 
-    model_config = ConfigDict(extra="ignore")
-
 
 class QuestionBlueprint(_LenientModel):
     """Output of Stage 3 — Question Blueprint."""
@@ -60,8 +56,6 @@ class QuestionBlueprint(_LenientModel):
     stimulus_context: str | None = Field(default=None, description="Skenario/cerita kontekstual nyata untuk C3/C4")
     expected_answer_summary: str = Field(default="", description="Ringkasan inti jawaban ideal yang diharapkan")
     answer_scope: str = Field(default="", description="Batasan panjang dan kedalaman jawaban siswa SD")
-
-    model_config = ConfigDict(extra="ignore")
 
 
 class BatchBlueprint(QuestionBlueprint):
@@ -85,8 +79,6 @@ class QuestionPackage(_LenientModel):
     expected_answer: str = Field(description="Jawaban ideal yang benar dan konkret")
     explanation: str = Field(default="", description="Penjelasan konteks materi dan alasan jawaban")
 
-    model_config = ConfigDict(extra="ignore")
-
 
 class JudgeAspectResult(_LenientModel):
     status: str = Field(default="pass", description="pass atau fail")
@@ -104,8 +96,6 @@ class JudgeEvaluationResult(_LenientModel):
     answer_alignment: JudgeAspectResult = Field(default_factory=lambda: JudgeAspectResult(status="pass"))
     overall: str = Field(default="pass", description="pass atau fail")
     failed_stage: str = Field(default="none", description="generation / planning / none")
-
-    model_config = ConfigDict(extra="ignore")
 
 
 class PromptStageTrace(BaseModel):

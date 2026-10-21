@@ -69,13 +69,13 @@ def _build_test_graph(monkeypatch, candidates: list[dict[str, Any]]):
     monkeypatch.setattr(nodes, "get_shared_dense_index", lambda: None)
     monkeypatch.setattr(
         nodes, "compute_grounding_evidence_score",
-        lambda **_: {"score": 0.9, "target": "evidence", "is_evidence_based": True},
+        lambda **_: {"score": 0.9, "target": "evidence"},
     )
     monkeypatch.setattr(workflow, "retrieve_context", lambda state: {"retrieved_chunks": [{"id": "x"}]})
     async def fake_generate(state):
         # Stands in for the pipeline: each candidate runs its own validation subgraph (3 attempts as before)
         inputs = [
-            {**nodes._validation_input(q, state["session_id"], None, f"r1-{i}"), "max_attempts": 3}
+            {**nodes.validation_input(q, state["session_id"], None, f"r1-{i}"), "max_attempts": 3}
             for i, q in enumerate(candidates)
         ]
         return {"validated_questions": list(await asyncio.gather(*[nodes.validate_candidate(s) for s in inputs]))}

@@ -4,14 +4,12 @@ import json
 import logging
 from collections.abc import Sequence
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from sqlalchemy.orm import Session
 
 from app.models.db_models import ChatMessage, Chunk, Question, ValidationLog
 from app.services.chat.intent import format_history
 from app.services.chat.prompts import DISCUSSION_PROMPT, SYSTEM_DISCUSSION_PERSONA
-from app.services.generation.stage_runners import JUDGE_CONTEXT_CHARS, extract_json_object
-from app.services.llm import get_chat_model
+from app.services.generation.stage_runners import JUDGE_CONTEXT_CHARS, invoke_json
 
 logger = logging.getLogger(__name__)
 
@@ -63,11 +61,7 @@ def answer_about_question(
         message=message,
     )
     try:
-        resp = get_chat_model(is_judge=False, temperature=0.2).invoke(
-            [SystemMessage(content=SYSTEM_DISCUSSION_PERSONA), HumanMessage(content=prompt)]
-        )
-        raw = resp.content if isinstance(resp.content, str) else str(resp.content)
-        reply = str(extract_json_object(raw).get("reply") or "").strip()
+        reply = str(invoke_json(SYSTEM_DISCUSSION_PERSONA, prompt, temperature=0.2).get("reply") or "").strip()
     except Exception as e:
         logger.error("[Chat Discussion] LLM call failed: %s", e)
         reply = ""

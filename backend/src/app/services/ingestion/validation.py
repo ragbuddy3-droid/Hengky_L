@@ -4,13 +4,11 @@ import io
 import logging
 from collections.abc import Sequence
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 from pypdf import PdfReader
 
-from app.services.generation.stage_runners import extract_json_object
+from app.services.generation.stage_runners import invoke_json
 from app.services.ingestion.chunkers.fixed_chunker import ChunkResult
-from app.services.llm import get_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -103,11 +101,7 @@ def classify_document(chunks: Sequence[ChunkResult], subject: str) -> DocumentCh
     """LLM check of what the document is; any failure accepts the document so an API outage never blocks uploads."""
     prompt = DOCUMENT_CHECK_PROMPT.format(subject=subject, sample=sample_chunks(chunks))
     try:
-        resp = get_chat_model(is_judge=False, temperature=0.0).invoke(
-            [SystemMessage(content=SYSTEM_DOCUMENT_CHECK), HumanMessage(content=prompt)]
-        )
-        raw = resp.content if isinstance(resp.content, str) else str(resp.content)
-        check = DocumentCheck.model_validate(extract_json_object(raw))
+        check = DocumentCheck.model_validate(invoke_json(SYSTEM_DOCUMENT_CHECK, prompt, temperature=0.0))
     except Exception as e:
         logger.warning("[Validation] Document classification failed, accepting document: %s", e)
         return DocumentCheck()

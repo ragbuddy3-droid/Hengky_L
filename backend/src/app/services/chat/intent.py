@@ -5,14 +5,12 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Literal
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, field_validator
 
 from app.schemas.api_schemas import GenerateParams
 from app.services.chat.prompts import ROUTER_PROMPT, SYSTEM_ROUTER_PERSONA
 from app.services.generation.planner import MIXED_BLOOM_LEVELS
-from app.services.generation.stage_runners import extract_json_object
-from app.services.llm import get_chat_model
+from app.services.generation.stage_runners import invoke_json
 
 if TYPE_CHECKING:
     from app.models.db_models import ChatMessage
@@ -180,11 +178,7 @@ def classify_message(text: str, history: "Sequence[ChatMessage]", question_count
     """LLM router for messages the regexes did not catch; any failure falls back to the help reply."""
     prompt = ROUTER_PROMPT.format(question_count=question_count, history=format_history(history), message=text)
     try:
-        resp = get_chat_model(is_judge=False, temperature=0.0).invoke(
-            [SystemMessage(content=SYSTEM_ROUTER_PERSONA), HumanMessage(content=prompt)]
-        )
-        raw = resp.content if isinstance(resp.content, str) else str(resp.content)
-        intent = ChatIntent.model_validate(extract_json_object(raw))
+        intent = ChatIntent.model_validate(invoke_json(SYSTEM_ROUTER_PERSONA, prompt, temperature=0.0))
     except Exception as e:
         logger.warning("[Chat Router] classification failed, falling back to help: %s", e)
         return ChatIntent(intent="help")

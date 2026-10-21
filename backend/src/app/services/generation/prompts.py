@@ -228,9 +228,9 @@ Ketentuan Khusus Penulisan Soal SD:
 6. Jawaban Ideal (expected_answer): Harus 100% didukung fakta materi CONTEXT, dirumuskan dengan kalimat utuh, komunikatif, dan runtut sebagai standar kunci jawaban guru. Jangan menambah fakta pelengkap dari luar CONTEXT.
 7. Penjelasan (explanation): Berikan penjelasan ringkas dan edukatif mengapa jawaban tersebut benar, hanya dengan merujuk fakta di CONTEXT.
 8. Soal Mandiri & Jelas: Soal harus bisa dipahami oleh siswa yang membacanya tanpa mengikuti pelajaran di kelas. Sebut langsung nama konsep/objek/peristiwanya. DILARANG merujuk pengalaman kelas seperti "yang telah kamu pelajari", "yang sudah kalian lakukan", "di kelas", "di sekolahmu", atau "aktivitas tadi". DILARANG juga merujuk teks sumber seperti "dalam teks", "menurut bacaan", atau "yang disebutkan dalam materi", karena siswa tidak melihat CONTEXT.
-11. Harus Bisa Dijawab: Tanyakan hanya informasi yang benar-benar tertulis di CONTEXT. Jika CONTEXT tidak menyebut suatu detail (nama, angka, tempat), jangan tanyakan detail itu. `expected_answer` tidak boleh berbunyi "tidak disebutkan" atau sejenisnya.
 9. Satu Pertanyaan: Tulis tepat SATU pertanyaan per butir. Jangan menambahkan pertanyaan kedua (contoh salah: "Jelaskan cara bermainnya. Apa tujuannya?").
 10. Akhiri pertanyaan dengan tanda tanya (?), atau dengan titik (.) jika berupa kalimat perintah seperti "Jelaskan ..." / "Sebutkan ...".
+11. Harus Bisa Dijawab: Tanyakan hanya informasi yang benar-benar tertulis di CONTEXT. Jika CONTEXT tidak menyebut suatu detail (nama, angka, tempat), jangan tanyakan detail itu. `expected_answer` tidak boleh berbunyi "tidak disebutkan" atau sejenisnya.
 12. Bukan Soal Navigasi Buku: DILARANG bertanya tentang cara memakai buku, seperti memindai barcode/kode QR, membuka tautan, membuka halaman tertentu, atau menyalin ke buku tugas. Abaikan bagian CONTEXT yang berisi petunjuk semacam itu.
 
 OUTPUT JSON:

@@ -1,4 +1,4 @@
-"""Centralized logging configuration for backend_new."""
+"""Centralized logging configuration."""
 
 import logging
 from logging.handlers import RotatingFileHandler

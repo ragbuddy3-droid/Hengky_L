@@ -1,7 +1,6 @@
 """Persistence of generated questions with their own validation logs and prompt traces."""
 
 import json
-import logging
 import uuid
 from datetime import timedelta
 from typing import Any
@@ -9,8 +8,6 @@ from typing import Any
 from app.core.database import get_session
 from app.models.db_models import Question, ValidationLog, utcnow
 from app.services.validation.quality_checks import validate_answer_quality
-
-logger = logging.getLogger(__name__)
 
 _MAX_STORED_PROMPT_CHARS = 6000
 
@@ -45,6 +42,32 @@ def _validation_log_rows(question_id: str, logs: list[dict[str, Any]]) -> list[V
     ]
 
 
+def _with_defaults(q: dict[str, Any], question_id: str, fallback_reference: str | None = None) -> dict[str, Any]:
+    q = dict(q)
+    q["id"] = question_id
+    q["source_reference"] = q.get("source_reference") or fallback_reference or "Materi Buku"
+    q["explanation"] = q.get("explanation") or f"Penjelasan berdasarkan materi {q.get('knowledge_point', '')}."
+    return q
+
+
+def _content_columns(q: dict[str, Any]) -> dict[str, Any]:
+    """Question columns written by both inserts and in-place revisions."""
+    quality_issues = validate_answer_quality(q)
+    return {
+        "question_type": q.get("question_type", "esai"),
+        "question_text": q.get("question", ""),
+        "answer_key": q.get("answer", ""),
+        "explanation": q["explanation"],
+        "source_reference": q["source_reference"],
+        "status": q.get("status", "needs_review"),
+        "refinement_count": q.get("refinement_count", 0),
+        "grounding_evidence": q.get("grounding_evidence", ""),
+        "knowledge_point": q.get("knowledge_point", ""),
+        "prompt_traces": _dumps(_prune_stage_traces(q.get("stage_traces", []))),
+        "quality_warnings": _dumps(quality_issues) if quality_issues else None,
+    }
+
+
 def save_questions(
     session_id: str,
     questions: list[dict[str, Any]],
@@ -56,34 +79,17 @@ def save_questions(
     base_time = utcnow()
     with get_session() as db:
         for offset, q in enumerate(questions):
-            q = dict(q)
-            q["id"] = str(uuid.uuid4())
-            q["source_reference"] = q.get("source_reference") or "Materi Buku"
-            q["explanation"] = q.get("explanation") or f"Penjelasan berdasarkan materi {q.get('knowledge_point', '')}."
-
-            quality_issues = validate_answer_quality(q)
+            q = _with_defaults(q, str(uuid.uuid4()))
             # Generation, judge, and refinement only saw the question's own chunk
             chunk_ids = [q["chunk_id"]] if q.get("chunk_id") else source_chunk_ids
-
             db.add(Question(
                 id=q["id"],
                 session_id=session_id,
                 created_at=base_time + timedelta(microseconds=offset),
                 chunk_ids=_dumps(chunk_ids),
-                question_type=q.get("question_type", "esai"),
-                question_text=q.get("question", ""),
-                answer_key=q.get("answer", ""),
-                explanation=q["explanation"],
-                source_reference=q["source_reference"],
                 bloom_level=q.get("bloom_level") or "C2-Memahami",
-                status=q.get("status", "needs_review"),
-                refinement_count=q.get("refinement_count", 0),
-                grounding_evidence=q.get("grounding_evidence", ""),
-                knowledge_point=q.get("knowledge_point", ""),
-                prompt_traces=_dumps(_prune_stage_traces(q.get("stage_traces", []))),
-                quality_warnings=_dumps(quality_issues) if quality_issues else None,
+                **_content_columns(q),
             ))
-
             db.add_all(_validation_log_rows(q["id"], q.get("validation_logs", [])))
             saved.append(q)
 
@@ -97,27 +103,13 @@ def replace_question(question_id: str, q: dict[str, Any]) -> dict[str, Any] | No
         row = db.get(Question, question_id)
         if row is None:
             return None
-        q = dict(q)
-        q["id"] = question_id
-        q["source_reference"] = q.get("source_reference") or row.source_reference or "Materi Buku"
-        q["explanation"] = q.get("explanation") or f"Penjelasan berdasarkan materi {q.get('knowledge_point', '')}."
-        quality_issues = validate_answer_quality(q)
-
-        row.question_type = q.get("question_type", "esai")  # type: ignore[assignment]
+        q = _with_defaults(q, question_id, str(row.source_reference or ""))
+        for column, value in _content_columns(q).items():
+            setattr(row, column, value)
         if q.get("chunk_id"):
             row.chunk_ids = _dumps([q["chunk_id"]])  # type: ignore[assignment]
-        row.question_text = q.get("question", "")  # type: ignore[assignment]
-        row.answer_key = q.get("answer", "")  # type: ignore[assignment]
-        row.explanation = q["explanation"]  # type: ignore[assignment]
-        row.source_reference = q["source_reference"]  # type: ignore[assignment]
         row.bloom_level = q.get("bloom_level") or row.bloom_level  # type: ignore[assignment]
-        row.status = q.get("status", "needs_review")  # type: ignore[assignment]
-        row.refinement_count = q.get("refinement_count", 0)  # type: ignore[assignment]
         row.revision_count = (row.revision_count or 0) + 1  # type: ignore[assignment]
-        row.grounding_evidence = q.get("grounding_evidence", "")  # type: ignore[assignment]
-        row.knowledge_point = q.get("knowledge_point", "")  # type: ignore[assignment]
-        row.prompt_traces = _dumps(_prune_stage_traces(q.get("stage_traces", [])))  # type: ignore[assignment]
-        row.quality_warnings = _dumps(quality_issues) if quality_issues else None  # type: ignore[assignment]
 
         db.query(ValidationLog).filter(ValidationLog.question_id == question_id).delete()
         db.add_all(_validation_log_rows(question_id, q.get("validation_logs", [])))

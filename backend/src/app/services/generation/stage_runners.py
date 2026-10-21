@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
 from app.core.config import get_settings
-from app.services.generation.planner import normalize_bloom_level
+from app.services.generation.planner import NO_FEW_SHOT, normalize_bloom_level
 from app.services.generation.prompts import (
     LLM_JUDGE_PROMPT,
     REFINEMENT_PROMPT_A,
@@ -39,6 +39,7 @@ from app.services.generation.schemas import (
     QuestionPackage,
     TestableContentItem,
 )
+from app.services.llm import get_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,13 @@ def extract_json_object(response_text: str) -> dict[str, Any]:
             return res
 
     return {}
+
+
+def invoke_json(system: str, prompt: str, temperature: float) -> dict[str, Any]:
+    """One blocking JSON-mode call to the generator model; returns the parsed object ({} if none)."""
+    resp = get_chat_model(temperature=temperature).invoke([SystemMessage(content=system), HumanMessage(content=prompt)])
+    raw = resp.content if isinstance(resp.content, str) else str(resp.content)
+    return extract_json_object(raw)
 
 
 def _compact_content_analysis(ca: ContentAnalysis) -> str:
@@ -315,7 +323,7 @@ async def run_stage4_question_generation(
     blueprint: QuestionBlueprint,
     target_bloom_level: str,
     question_type: str = "esai",
-    few_shot_examples: str = "Tidak ada contoh tambahan.",
+    few_shot_examples: str = NO_FEW_SHOT,
     attempt: int = 1,
 ) -> tuple[QuestionPackage, PromptStageTrace]:
     """Stage 4: Question Generation (Question + Answer + Explanation)."""
@@ -325,7 +333,7 @@ async def run_stage4_question_generation(
         STAGE4_QUESTION_GENERATION_PROMPT.format(
             retrieved_context=retrieved_context,
             question_blueprint=json.dumps(blueprint.model_dump(), ensure_ascii=False),
-            few_shot_examples=few_shot_examples or "Tidak ada contoh tambahan.",
+            few_shot_examples=few_shot_examples or NO_FEW_SHOT,
             question_type=question_type,
             target_bloom_level=target_bloom_level,
         ),

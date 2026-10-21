@@ -1,6 +1,5 @@
 """Question planning: Bloom level mix, validated knowledge points per chunk, capacity-based allocation, focus context."""
 
-import logging
 from typing import Any
 
 from app.core.database import get_session
@@ -13,8 +12,6 @@ from app.services.validation.quality_checks import (
     jaccard,
     tokens,
 )
-
-logger = logging.getLogger(__name__)
 
 # Used round-robin when the user does not ask for a specific level
 MIXED_BLOOM_LEVELS = ["C1-Mengingat", "C2-Memahami", "C3-Mengaplikasikan", "C4-Menganalisis"]
@@ -124,12 +121,11 @@ def allocate_items(
     point_lists: list[list[dict[str, Any]]],
     levels: list[str],
     max_per_chunk: int,
-    allow_reuse: bool = True,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Give each chunk up to `max_per_chunk` questions, round-robin in rank order; return (items, spare points).
 
     A chunk's questions get different Bloom levels where the mix allows. When there are fewer points than
-    levels and `allow_reuse`, spare points and then already used points are reused with the remaining levels.
+    levels, spare points and then already used points are reused with the remaining levels.
     """
     chosen: list[dict[str, Any]] = []
     for rank in range(max_per_chunk):
@@ -139,7 +135,7 @@ def allocate_items(
     chosen_ids = {id(p) for p in chosen}
     spare = [p for p in interleave(point_lists) if id(p) not in chosen_ids]
 
-    if allow_reuse and chosen and len(chosen) < len(levels):
+    if chosen and len(chosen) < len(levels):
         # Points beyond a chunk's cap first, then points already chosen (with another level / angle)
         pool = spare + chosen
         need = len(levels) - len(chosen)
