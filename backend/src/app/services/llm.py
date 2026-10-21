@@ -1,6 +1,7 @@
 """Cached LangChain chat models for the DeepInfra OpenAI-compatible API."""
 
 import logging
+from typing import Any
 
 from langchain_openai import ChatOpenAI
 
@@ -9,6 +10,20 @@ from app.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 _chat_model_cache: dict[tuple[str, float], ChatOpenAI] = {}
+
+
+def deepinfra_client_kwargs() -> dict[str, Any]:
+    """Connection settings shared by the chat and embedding clients."""
+    settings = get_settings()
+    api_key = settings.DEEPINFRA_API_KEY
+    if not api_key:
+        logger.warning("DEEPINFRA_API_KEY is not configured in .env; DeepInfra calls will fail.")
+    return {
+        "api_key": api_key or "sk-dummy-key",
+        "base_url": settings.DEEPINFRA_BASE_URL,
+        "timeout": settings.LLM_REQUEST_TIMEOUT,
+        "max_retries": settings.LLM_MAX_RETRIES,
+    }
 
 
 def get_chat_model(is_judge: bool = False, temperature: float | None = None) -> ChatOpenAI:
@@ -21,20 +36,12 @@ def get_chat_model(is_judge: bool = False, temperature: float | None = None) -> 
     if cache_key in _chat_model_cache:
         return _chat_model_cache[cache_key]
 
-    api_key = settings.DEEPINFRA_API_KEY
-    if not api_key:
-        logger.warning("DEEPINFRA_API_KEY is not configured in .env. LLM calls will require a valid DeepInfra token.")
-
     client = ChatOpenAI(
         model=model_name,
-        api_key=api_key or "sk-dummy-key",
-        base_url=settings.DEEPINFRA_BASE_URL or "https://api.deepinfra.com/v1/openai",
         temperature=temp,
         max_tokens=settings.MAX_TOKENS,  # pyright: ignore[reportCallIssue]  # alias of max_completion_tokens
-        timeout=settings.LLM_REQUEST_TIMEOUT,
-        max_retries=settings.LLM_MAX_RETRIES,
         model_kwargs={"response_format": {"type": "json_object"}},
-        default_headers={"HTTP-Referer": "http://localhost:3000", "X-Title": "Soalnya"},
+        **deepinfra_client_kwargs(),
     )
     _chat_model_cache[cache_key] = client
     return client

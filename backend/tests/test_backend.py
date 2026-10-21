@@ -1,10 +1,10 @@
-"""Unit and integration tests for backend_new."""
+"""Unit and integration tests for the backend."""
 
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
 from app.main import app
-from app.services.ingestion.factory import chunk_text
+from app.services.ingestion.factory import get_chunker
 from app.services.retrieval.hybrid_search import reciprocal_rank_fusion
 from app.services.retrieval.sparse_index import SparseIndex
 
@@ -25,15 +25,12 @@ def test_health_endpoints():
 def test_settings_pure_yaml():
     """Verify settings loaded properly from YAML and .env."""
     settings = get_settings()
-    assert settings.app.backend_port == 8000
     assert settings.llm.provider == "deepinfra"
     assert settings.llm.generator_model == "Qwen/Qwen3-Next-80B-A3B-Instruct"
     assert settings.llm.judge_model == "meta-llama/Llama-3.3-70B-Instruct-Turbo"
     assert settings.llm.deepinfra_base_url == "https://api.deepinfra.com/v1/openai"
     assert settings.validation.fast_reject_threshold == 0.40
-    assert settings.chunking.strategy == "fixed"
     assert settings.retrieval.candidate_top_k == 15
-    assert settings.retrieval.reranker_enabled is False
 
 
 def test_deepinfra_chat_model_initialization():
@@ -97,7 +94,7 @@ def test_fixed_chunker_factory():
         "Organ pernapasan manusia adalah hidung, tenggorokan, dan paru-paru. "
         "Paru-paru berfungsi untuk menukar oksigen dan karbon dioksida. " * 5
     )
-    chunks = chunk_text(sample_text)
+    chunks = get_chunker().chunk(sample_text)
     assert len(chunks) >= 1
     assert "Bab 1" in str(chunks[0].chapter)
 

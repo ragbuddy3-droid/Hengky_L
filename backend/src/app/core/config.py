@@ -47,8 +47,6 @@ def find_yaml_config() -> str:
 
 
 class AppConfig(BaseModel):
-    backend_host: str = "0.0.0.0"
-    backend_port: int = 8000
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
 
@@ -66,11 +64,7 @@ class LLMConfig(BaseModel):
     @field_validator("deepinfra_api_key", mode="before")
     @classmethod
     def resolve_env_var(cls, v: Any) -> Any:
-        """Resolve API token strictly from environment (.env) if omitted or placeholder."""
-        if not v or (isinstance(v, str) and v.startswith("${") and v.endswith("}")):
-            return os.environ.get("DEEPINFRA_API_KEY") or os.environ.get("DEEPINFRA_TOKEN")
-        return v
-
+        return v or os.environ.get("DEEPINFRA_API_KEY")
 
 
 class ValidationConfig(BaseModel):
@@ -87,7 +81,6 @@ class RetrievalConfig(BaseModel):
     candidate_top_k: int = 15
     hybrid_dense_weight: float = 0.6
     hybrid_sparse_weight: float = 0.4
-    reranker_enabled: bool = True
     max_questions_per_chunk: int = 3  # upper bound of a chunk's question capacity
     min_relative_score: float = 0.5  # drop topic candidates scoring below this fraction of the best one
     reserve_chunks: int = 3  # extra ranked chunks for capacity expansion and the top-up round
@@ -110,16 +103,12 @@ class AuthConfig(BaseModel):
     @field_validator("jwt_secret", mode="before")
     @classmethod
     def resolve_env_var(cls, v: Any) -> Any:
-        if not v or (isinstance(v, str) and v.startswith("${") and v.endswith("}")):
-            return os.environ.get("JWT_SECRET")
-        return v
+        return v or os.environ.get("JWT_SECRET")
 
 
 class ChunkingConfig(BaseModel):
-    strategy: str = "fixed"
     fixed_chunk_size: int = 1000
     fixed_chunk_overlap: int = 150
-
 
 
 class Settings(BaseModel):
@@ -136,15 +125,6 @@ class Settings(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    # Convenient backward-compatible uppercase properties
-    @property
-    def BACKEND_HOST(self) -> str:
-        return self.app.backend_host
-
-    @property
-    def BACKEND_PORT(self) -> int:
-        return self.app.backend_port
-
     @property
     def CORS_ORIGINS(self) -> list[str]:
         return self.app.cors_origins
@@ -155,7 +135,7 @@ class Settings(BaseModel):
 
     @property
     def DEEPINFRA_API_KEY(self) -> str | None:
-        return self.llm.deepinfra_api_key or os.environ.get("DEEPINFRA_API_KEY") or os.environ.get("DEEPINFRA_TOKEN")
+        return self.llm.deepinfra_api_key
 
     @property
     def DEEPINFRA_BASE_URL(self) -> str:
@@ -216,10 +196,6 @@ class Settings(BaseModel):
     @property
     def RESERVE_CHUNKS(self) -> int:
         return self.retrieval.reserve_chunks
-
-    @property
-    def RERANKER_ENABLED(self) -> bool:
-        return self.retrieval.reranker_enabled
 
     @property
     def HYBRID_DENSE_WEIGHT(self) -> float:

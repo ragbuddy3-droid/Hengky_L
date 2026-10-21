@@ -35,7 +35,7 @@ def main() -> None:
         if args.document_id:
             query = query.filter(Document.id == args.document_id)
         docs = [
-            (str(d.id), str(d.filename), str(d.filepath or ""), str(d.chunking_strategy or "fixed"))
+            (str(d.id), str(d.filename), str(d.filepath or ""))
             for d in query.all()
         ]
 
@@ -44,7 +44,7 @@ def main() -> None:
         return
 
     failed = 0
-    for doc_id, filename, filepath, strategy in docs:
+    for doc_id, filename, filepath in docs:
         if not filepath or not Path(filepath).exists():
             print(f"SKIP {filename}: file not found ({filepath})")
             failed += 1
@@ -57,7 +57,7 @@ def main() -> None:
                 db.delete(chunk)  # ORM delete so ChunkAnalysis rows cascade
             db.commit()
 
-        process_document(doc_id, str(filepath), strategy)
+        process_document(doc_id, str(filepath))
 
         with get_session() as db:
             doc = db.query(Document).filter(Document.id == doc_id).one()

@@ -1,12 +1,9 @@
 """In-memory embedding cache to avoid redundant embedding API calls."""
 
 import hashlib
-import logging
 from typing import Any
 
 import numpy as np
-
-logger = logging.getLogger(__name__)
 
 
 class EmbeddingCache:
@@ -53,7 +50,3 @@ class EmbeddingCache:
 
         results.sort(key=lambda x: x[0])
         return [emb for _, emb in results]
-
-    def clear(self):
-        """Clear all cached embeddings."""
-        self._cache.clear()

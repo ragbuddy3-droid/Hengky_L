@@ -2,7 +2,6 @@
 
 import logging
 import re
-import time
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,14 +9,9 @@ from pathlib import Path
 import pdfplumber
 from pypdf import PdfReader
 
-logger = logging.getLogger(__name__)
+from app.services.ingestion.chunkers.classifiers import ROMAN_MAP
 
-ROMAN_MAP = {
-    'I': '1', 'II': '2', 'III': '3', 'IV': '4', 'V': '5',
-    'VI': '6', 'VII': '7', 'VIII': '8', 'IX': '9', 'X': '10',
-    'XI': '11', 'XII': '12', 'XIII': '13', 'XIV': '14', 'XV': '15',
-    'XVI': '16', 'XVII': '17', 'XVIII': '18', 'XIX': '19', 'XX': '20',
-}
+logger = logging.getLogger(__name__)
 
 FRONT_MATTER_TITLES = [
     'kata pengantar', 'prakata', 'daftar isi', 'daftar gambar', 'daftar tabel',
@@ -89,10 +83,6 @@ class ChapterInfo:
     """Structured chapter metadata."""
     number: int
     title: str
-
-    @property
-    def full_label(self) -> str:
-        return chapter_label(self.number, self.title)
 
 
 @dataclass
@@ -177,17 +167,13 @@ def same_title(a: str, b: str) -> bool:
     return ka.startswith(kb) or kb.startswith(ka)
 
 
-def parse_toc_from_pages(raw_pages: list[str]) -> list[ChapterInfo]:
-    """
-    Parse Table of Contents (Daftar Isi) from the early pages of the textbook.
-    Returns structured list of ChapterInfo objects.
-    """
+def parse_toc_from_pages(page_norms: list[str]) -> list[ChapterInfo]:
+    """Parse the Table of Contents (Daftar Isi) from the early, font-normalized pages of the textbook."""
     chapters: list[ChapterInfo] = []
     in_toc = False
     toc_lines: list[str] = []
 
-    for text in raw_pages[:15]:
-        norm = normalize_text_fonts(text)
+    for norm in page_norms[:15]:
         lines = [l.strip() for l in norm.split('\n') if l.strip()]
 
         is_toc_page = any(
@@ -382,24 +368,6 @@ def detect_chapter_running_header(page_norm: str, titles: dict[int, str]) -> tup
     return None
 
 
-def extract_chapter_from_raw_page(raw_text: str) -> str | None:
-    """Chapter label from a single raw page (running header first, then an opener line)."""
-    if not raw_text:
-        return None
-    lines = _page_lines(normalize_text_fonts(raw_text))
-    for line in lines:
-        parsed = match_running_header(line)
-        if parsed:
-            return chapter_label(*parsed)
-    for line in lines[:8]:
-        m = CHAPTER_OPENER_REGEX.match(line)
-        if m and '...' not in line:
-            number = to_chapter_number(m.group(1))
-            if number is not None:
-                return chapter_label(number, clean_chapter_title(m.group(2) or ""))
-    return None
-
-
 def is_bab1_opener(lines: list[str]) -> bool:
     """Check if page lines represent a Bab 1 / Chapter 1 opener page."""
     for l in lines[:6]:
@@ -421,14 +389,13 @@ def is_bab1_opener(lines: list[str]) -> bool:
     return False
 
 
-def find_main_content_start(raw_pages: list[tuple[int, str]]) -> int:
-    """Find the exact 0-indexed page where main content (Bab 1) begins, safely skipping all front matter."""
+def find_main_content_start(page_norms: list[str]) -> int:
+    """Find the 0-indexed page where main content (Bab 1) begins, skipping all front matter."""
     in_toc = False
     in_guide = False
     fm_indices: set[int] = set()
 
-    for i, (_, raw) in enumerate(raw_pages[:30]):
-        norm = normalize_text_fonts(raw)
+    for i, norm in enumerate(page_norms[:30]):
         lines = [l.strip() for l in norm.split('\n') if l.strip()]
         if not lines:
             fm_indices.add(i)
@@ -480,14 +447,9 @@ def find_main_content_start(raw_pages: list[tuple[int, str]]) -> int:
             if is_bab1_opener(lines):
                 break
 
-    for i, (_, raw) in enumerate(raw_pages[:30]):
-        if i in fm_indices or i < 4:
-            continue
-        norm = normalize_text_fonts(raw)
-        lines = [l.strip() for l in norm.split('\n') if l.strip()]
-        if not lines:
-            continue
-        return i
+    for i, norm in enumerate(page_norms[:30]):
+        if i not in fm_indices and i >= 4 and norm.strip():
+            return i
 
     return 8
 
@@ -516,28 +478,28 @@ def build_pages(raw_pages: list[tuple[int, str]]) -> list[PageContent]:
     "Ingat, di Bab 2 kamu sudah belajar ..." on a Bab 6 page can't pull the page back.
     """
     total_pages = len(raw_pages)
-    toc_chapters = parse_toc_from_pages([text for _, text in raw_pages])
-    main_start_idx = find_main_content_start(raw_pages)
+    page_norms = [normalize_text_fonts(text) for _, text in raw_pages]
+    toc_chapters = parse_toc_from_pages(page_norms)
+    main_start_idx = find_main_content_start(page_norms)
     logger.info("Main content start confirmed at Page %d", main_start_idx + 1)
 
     # Main-content pages up to the back matter
-    body: list[tuple[int, str, str]] = []  # (page number, raw text, normalized text)
+    body: list[tuple[int, str]] = []  # (page number, normalized text)
     for i in range(main_start_idx, total_pages):
-        p_num, raw_text = raw_pages[i]
-        norm = normalize_text_fonts(raw_text)
+        p_num, norm = raw_pages[i][0], page_norms[i]
         lines = _page_lines(norm)
         if not lines:
             continue
         if i > total_pages * 0.70 and _is_back_matter(lines):
             logger.info("Back-matter reached at Page %d, stopping extraction.", p_num)
             break
-        body.append((p_num, raw_text, norm))
+        body.append((p_num, norm))
 
-    titles = resolve_chapter_titles([norm for _, _, norm in body], toc_chapters)
+    titles = resolve_chapter_titles([norm for _, norm in body], toc_chapters)
     current = 1
 
     pages_data: list[PageContent] = []
-    for p_num, raw_text, norm in body:
+    for p_num, norm in body:
         opener = detect_chapter_opener(norm, titles, current)
         if opener and current < opener[0] <= current + 2:
             current = opener[0]
@@ -548,7 +510,7 @@ def build_pages(raw_pages: list[tuple[int, str]]) -> list[PageContent]:
                 current = running[0]
                 titles.setdefault(current, running[1])
 
-        cleaned = clean_text(raw_text)
+        cleaned = _clean_normalized(norm)
         if cleaned:
             pages_data.append(PageContent(page_number=p_num, text=cleaned, chapter=chapter_label(current, titles.get(current))))
 
@@ -559,14 +521,6 @@ def build_pages(raw_pages: list[tuple[int, str]]) -> list[PageContent]:
 def extract_pages_from_pdf(file_path: Path) -> list[PageContent]:
     """Extract pages as a list of PageContent objects with front/back matter filtering and chapter tracking."""
     return build_pages(_read_raw_pages(file_path))
-
-
-def extract_text_from_pdf(file_path: Path) -> str:
-    """Extract full main content text from PDF."""
-    pages = extract_pages_from_pdf(file_path)
-    full_text = "\n\n".join(p.text for p in pages)
-    logger.info("Extracted main content text length: %s chars across %d pages", f"{len(full_text):,}", len(pages))
-    return full_text
 
 
 def _strip_url(match: re.Match[str]) -> str:
@@ -589,9 +543,12 @@ def drop_navigation_sentences(text: str) -> str:
 
 def clean_text(text: str) -> str:
     """Remove noise lines, running headers/footers, page numbers, links, barcode instructions and excess whitespace."""
-    if not text:
+    return _clean_normalized(normalize_text_fonts(text))
+
+
+def _clean_normalized(text_norm: str) -> str:
+    if not text_norm:
         return ""
-    text_norm = normalize_text_fonts(text)
     cleaned_lines = []
 
     for line in text_norm.split('\n'):
@@ -605,23 +562,3 @@ def clean_text(text: str) -> str:
     result = "\n".join(line.strip() for line in result.split("\n") if line.strip())
     result = re.sub(r'[ \t]{2,}', ' ', result)
     return result.strip()
-
-
-def process_pdf(file_path: Path) -> str:
-    """Orchestrate extraction + front-matter filtering + cleaning."""
-    file_size_mb = file_path.stat().st_size / (1024 * 1024)
-    logger.info("=" * 50)
-    logger.info("Starting PDF processing: '%s' (%.2fMB)", file_path.name, file_size_mb)
-
-    start_time = time.time()
-    raw_text = extract_text_from_pdf(file_path)
-    elapsed = time.time() - start_time
-
-    logger.info("PDF extraction & cleaning complete in %.2fs", elapsed)
-    logger.info("=" * 50)
-    return raw_text
-
-
-def process_pdf_pages(file_path: Path) -> list[PageContent]:
-    """Process PDF and return list of cleaned PageContent objects with page numbers."""
-    return extract_pages_from_pdf(file_path)

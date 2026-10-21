@@ -9,8 +9,8 @@ from typing import Any
 from app.core.database import get_session
 from app.models.db_models import Chunk, Document
 from app.services.auth.guest_quota import refund
-from app.services.ingestion.extractor import process_pdf, process_pdf_pages
-from app.services.ingestion.factory import chunk_pages, chunk_text
+from app.services.ingestion.extractor import extract_pages_from_pdf
+from app.services.ingestion.factory import chunk_pages
 from app.services.ingestion.validation import DocumentRejected, check_document
 from app.services.retrieval.retriever import get_shared_dense_index, invalidate_sparse_cache
 
@@ -43,9 +43,9 @@ def _document_subject(document_id: str) -> str:
         return str(doc.subject) if doc else ""
 
 
-def process_document(document_id: str, file_path: str, chunking_strategy: str = "fixed") -> None:
+def process_document(document_id: str, file_path: str) -> None:
     """Extract, chunk, store and index an uploaded PDF. The document becomes 'ready' only once it is searchable."""
-    logger.info("[Ingestion] Starting doc_id='%s' (strategy='%s')", document_id, chunking_strategy)
+    logger.info("[Ingestion] Starting doc_id='%s'", document_id)
     total_start = time.time()
 
     if not _set_document_status(document_id, "processing"):
@@ -54,11 +54,8 @@ def process_document(document_id: str, file_path: str, chunking_strategy: str = 
 
     try:
         step_start = time.time()
-        pages = process_pdf_pages(Path(file_path))
-        if pages:
-            chunks = chunk_pages(pages, strategy=chunking_strategy)
-        else:
-            chunks = chunk_text(process_pdf(Path(file_path)), strategy=chunking_strategy)
+        pages = extract_pages_from_pdf(Path(file_path))
+        chunks = chunk_pages(pages)
         logger.info("[Ingestion] Extracted %d pages into %d chunks in %.2fs", len(pages), len(chunks), time.time() - step_start)
 
         step_start = time.time()

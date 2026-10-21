@@ -1,10 +1,7 @@
 """Post-generation quality heuristic checks (non-LLM)."""
 
-import logging
 import re
 from typing import Any
-
-logger = logging.getLogger(__name__)
 
 # Imperative essay prompts ("Jelaskan ...", "Sebutkan ...") may legitimately end with a period.
 _IMPERATIVE_VERBS = (

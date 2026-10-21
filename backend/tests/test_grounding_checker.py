@@ -57,7 +57,7 @@ def test_grounding_score_empty_input():
         dense_idx=mock_dense,
     )
     assert res["score"] == 0.0
-    assert res["is_evidence_based"] is False
+    assert res["target"] == "none"
 
 
 def test_grounding_score_with_evidence():
@@ -67,7 +67,7 @@ def test_grounding_score_with_evidence():
 
     # Unit vector representing perfect alignment
     aligned_vec = np.array([1.0, 0.0, 0.0])
-    mock_model.encode.return_value = np.array([aligned_vec])
+    mock_model.encode.side_effect = lambda texts, **kwargs: np.array([aligned_vec for _ in texts])
     mock_dense.model = mock_model
 
     res = compute_grounding_evidence_score(
@@ -78,4 +78,4 @@ def test_grounding_score_with_evidence():
         dense_idx=mock_dense,
     )
     assert res["score"] > 0.8
-    assert res["is_evidence_based"] is True
+    assert mock_model.encode.call_count == 1

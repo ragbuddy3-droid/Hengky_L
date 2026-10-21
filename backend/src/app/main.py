@@ -1,37 +1,23 @@
-"""FastAPI application entry point (v4 / Clean Architecture with LangGraph)."""
+"""FastAPI application entry point."""
 
 import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import router
 from app.core.config import get_settings
-from app.core.database import get_session, init_db
+from app.core.database import get_session
 from app.core.logging_config import setup_logging
 from app.graph.workflow import get_aqg_graph
 from app.services.auth.data import purge_stale_guest_data
 from app.services.chat.session_store import fail_interrupted_generations
-from app.services.llm import get_chat_model
-from app.services.retrieval.retriever import get_shared_dense_index
 
 logger = logging.getLogger(__name__)
 
 _GUEST_PURGE_INTERVAL = 3600  # seconds
-
-
-def _prewarm_models() -> None:
-    try:
-        dense_idx = get_shared_dense_index()
-        dense_idx.model.encode(["pemanasan model"], normalize_embeddings=True)
-        get_chat_model(is_judge=False)
-        get_chat_model(is_judge=True)
-        logger.info("Embedding API and chat models pre-warmed.")
-    except Exception as e:
-        logger.warning("Model pre-warm failed (will load lazily): %s", e)
 
 
 async def _purge_guest_data_periodically() -> None:
@@ -63,18 +49,11 @@ async def lifespan(app: FastAPI):
     logger.info("   CORS Origins    : %s", settings.CORS_ORIGINS)
     logger.info("=" * 60)
 
-    # Initialize Database
-    init_db()
     with get_session() as db:
         fail_interrupted_generations(db)
         db.commit()
 
-    # Pre-compile LangGraph StateGraph
     get_aqg_graph()
-
-    # Open the embedding and chat clients now instead of during the first generation request
-    await asyncio.to_thread(_prewarm_models)
-
     purge_task = asyncio.create_task(_purge_guest_data_periodically())
 
     yield
@@ -108,18 +87,3 @@ def health_check():
     """Health check endpoint."""
     return {"status": "ok", "version": "4.0.0"}
 
-
-def start():
-    """Run uvicorn server directly with scoped file watching."""
-    uvicorn.run(
-        "app.main:app",
-        host=settings.BACKEND_HOST,
-        port=settings.BACKEND_PORT,
-        reload=True,
-        reload_dirs=["src"],
-        reload_excludes=[".venv*", "data*", "*.log", "tests*"]
-    )
-
-
-if __name__ == "__main__":
-    start()

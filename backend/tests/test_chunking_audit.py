@@ -9,7 +9,6 @@ from app.services.ingestion.extractor import (
     PageContent,
     build_pages,
     clean_text,
-    extract_chapter_from_raw_page,
     is_valid_toc_title,
     match_running_header,
     resolve_chapter_titles,
@@ -19,25 +18,12 @@ from app.services.validation.quality_checks import find_book_navigation_issue, v
 
 
 def test_extract_chapter_from_running_headers():
-    """Verify running header format 'Bab X | Judul Bab 123' is accurately parsed into structured chapter string."""
-    raw_p1 = "Bab 1 | Makanan Bergizi untuk Kesehatan Pencernaanmu 3\nMulut merupakan organ pertama..."
-    chap1 = extract_chapter_from_raw_page(raw_p1)
-    assert chap1 == "Bab 1: Makanan Bergizi untuk Kesehatan Pencernaanmu"
-
-    raw_p5 = "Bab 5 | Energi untuk Masa Depan 139\nEnergi alternatif sangat penting..."
-    chap5 = extract_chapter_from_raw_page(raw_p5)
-    assert chap5 == "Bab 5: Energi untuk Masa Depan"
-
-    raw_p6 = "Bab 6 | Mengembara di Jagat Raya 169\nSistem tata surya kita terdiri atas..."
-    chap6 = extract_chapter_from_raw_page(raw_p6)
-    assert chap6 == "Bab 6: Mengembara di Jagat Raya"
-
-
-def test_extract_chapter_from_opener_title():
-    """Verify chapter title page opener without pipe delimiter is parsed."""
-    raw_opener = "BAB 2: Tarik dan Embuskan\nOrgan pernapasan manusia..."
-    chap2 = extract_chapter_from_raw_page(raw_opener)
-    assert chap2 == "Bab 2: Tarik dan Embuskan"
+    """Running headers 'Bab X | Judul Bab 123' parse into (number, title) without the page number."""
+    assert match_running_header("Bab 1 | Makanan Bergizi untuk Kesehatan Pencernaanmu 3") == (
+        1, "Makanan Bergizi untuk Kesehatan Pencernaanmu",
+    )
+    assert match_running_header("Bab 5 | Energi untuk Masa Depan 139") == (5, "Energi untuk Masa Depan")
+    assert match_running_header("Bab 6 | Mengembara di Jagat Raya 169") == (6, "Mengembara di Jagat Raya")
 
 
 def test_section_heading_regex_rejects_numbered_exercises():

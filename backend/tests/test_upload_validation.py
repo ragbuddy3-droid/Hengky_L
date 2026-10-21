@@ -9,7 +9,8 @@ from test_guest_quota import db_factory, make_pdf  # noqa: F401  (fixture re-exp
 
 from app.main import app
 from app.models.db_models import Chunk, Document
-from app.services.ingestion import pipeline, validation
+from app.services.generation import stage_runners
+from app.services.ingestion import pipeline
 from app.services.ingestion.chunkers.fixed_chunker import ChunkResult
 from app.services.ingestion.validation import DocumentRejected, check_document, validate_pdf_bytes
 
@@ -26,7 +27,7 @@ def _fake_model(monkeypatch, answer: dict | Exception):
                 raise answer
             return SimpleNamespace(content=json.dumps(answer))
 
-    monkeypatch.setattr(validation, "get_chat_model", lambda **kwargs: FakeModel())
+    monkeypatch.setattr(stage_runners, "get_chat_model", lambda **kwargs: FakeModel())
 
 
 def _upload(client: TestClient, content: bytes):
@@ -85,8 +86,8 @@ def test_pipeline_rejection_refunds_quota_and_stores_nothing(db_factory, monkeyp
 
     indexed: list = []
     monkeypatch.setattr(pipeline, "get_session", db_factory)
-    monkeypatch.setattr(pipeline, "process_pdf_pages", lambda path: ["halaman"])
-    monkeypatch.setattr(pipeline, "chunk_pages", lambda pages, strategy: _chunks())
+    monkeypatch.setattr(pipeline, "extract_pages_from_pdf", lambda path: ["halaman"])
+    monkeypatch.setattr(pipeline, "chunk_pages", lambda pages: _chunks())
     monkeypatch.setattr(pipeline, "get_shared_dense_index", lambda: SimpleNamespace(index_chunks=indexed.append))
     _fake_model(monkeypatch, {"is_textbook": False, "confidence": 0.9, "reason": "Ini invoice."})
 

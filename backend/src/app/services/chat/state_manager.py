@@ -50,8 +50,3 @@ class ChatStateManager:
 
     def questions(self) -> list[Question]:
         return session_questions(self.db, self.session_id)
-
-    def question_by_number(self, number: int) -> Question | None:
-        """The session's N-th question (1-based), or None if out of range."""
-        questions = self.questions()
-        return questions[number - 1] if 1 <= number <= len(questions) else None

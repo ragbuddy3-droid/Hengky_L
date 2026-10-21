@@ -5,12 +5,9 @@ full history and then the live events, until the final "done" event.
 """
 
 import asyncio
-import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
-
-logger = logging.getLogger(__name__)
 
 _RETENTION_SECONDS = 300  # keep a finished run's events so a late subscriber still sees its outcome
 

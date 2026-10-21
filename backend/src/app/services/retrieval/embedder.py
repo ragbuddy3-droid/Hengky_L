@@ -1,34 +1,21 @@
 """Text embeddings from the DeepInfra OpenAI-compatible API, so no model runs locally."""
 
-import logging
-
 import numpy as np
 from openai import OpenAI
 
-from app.core.config import get_settings
-
-logger = logging.getLogger(__name__)
+from app.services.llm import deepinfra_client_kwargs
 
 _BATCH_SIZE = 64  # texts per request; a whole book is embedded in a handful of calls
 
 
 class DeepInfraEmbedder:
-    """Drop-in for the SentenceTransformer.encode() calls the app makes."""
+    """Embeds batches of texts with one API call per batch."""
 
     def __init__(self, model_name: str):
-        settings = get_settings()
-        api_key = settings.DEEPINFRA_API_KEY
-        if not api_key:
-            logger.warning("DEEPINFRA_API_KEY is not configured in .env. Embedding calls will fail.")
         self.model_name = model_name
-        self._client = OpenAI(
-            api_key=api_key or "sk-dummy-key",
-            base_url=settings.DEEPINFRA_BASE_URL or "https://api.deepinfra.com/v1/openai",
-            timeout=settings.LLM_REQUEST_TIMEOUT,
-            max_retries=settings.LLM_MAX_RETRIES,
-        )
+        self._client = OpenAI(**deepinfra_client_kwargs())
 
-    def encode(self, texts: list[str], normalize_embeddings: bool = True, **_: object) -> np.ndarray:
+    def encode(self, texts: list[str], normalize_embeddings: bool = True) -> np.ndarray:
         """Embed texts in order; rows are L2-normalized when requested."""
         if not texts:
             return np.zeros((0, 0), dtype=np.float32)

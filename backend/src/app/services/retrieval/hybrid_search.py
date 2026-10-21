@@ -1,14 +1,11 @@
 """Hybrid retrieval combining dense vector search and sparse lexical search using Reciprocal Rank Fusion (RRF)."""
 
-import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from app.services.retrieval.dense_index import DenseIndex
 from app.services.retrieval.sparse_index import SparseIndex
-
-logger = logging.getLogger(__name__)
 
 
 def is_exercise_or_instruction_chunk(chunk_text: str) -> bool:
@@ -117,7 +114,7 @@ def reciprocal_rank_fusion(
 
 
 class HybridSearch:
-    """Hybrid search orchestrator across Dense and Sparse indexes with Cross-Score Reranking."""
+    """Hybrid search orchestrator across Dense and Sparse indexes fused with weighted RRF."""
 
     def __init__(
         self,
@@ -137,10 +134,9 @@ class HybridSearch:
         top_k: int = 5,
         document_id: str | None = None,
         candidate_k: int = 15,
-        enable_rerank: bool = True,
         chapters: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Run dense and sparse queries with doc-id/chapter filter, fuse with RRF, and re-rank with semantic cross-scoring."""
+        """Run dense and sparse queries with doc-id/chapter filter, fuse with RRF and drop exercise-only chunks."""
         fetch_k = max(top_k * 3, candidate_k)
 
         with ThreadPoolExecutor(max_workers=2) as executor:
@@ -162,35 +158,4 @@ class HybridSearch:
             if not is_exercise_or_instruction_chunk(chunk.get("text", ""))
         ]
 
-        if not clean_results:
-            clean_results = fused
-
-        if not clean_results:
-            return []
-
-        # Re-scoring stage: Re-calculate precise semantic cosine similarity between query and candidate texts
-        if enable_rerank and len(clean_results) > 1:
-            try:
-                candidate_pool = clean_results[:candidate_k]
-                query_emb = self.dense_index.model.encode([query], normalize_embeddings=True)[0]
-                chunk_texts = [c.get("text", "") for c in candidate_pool]
-                chunk_embs = self.dense_index.model.encode(chunk_texts, normalize_embeddings=True)
-
-                scored_candidates = []
-                for idx, c in enumerate(candidate_pool):
-                    sem_sim = float(sum(query_emb * chunk_embs[idx]))
-                    # Combined final score: 70% direct semantic similarity + 30% RRF rank score
-                    rrf_norm = float(c.get("rrf_score", 0.0)) * 50.0  # normalize RRF to ~0-1
-                    combined_score = 0.70 * sem_sim + 0.30 * rrf_norm
-
-                    c_copy = c.copy()
-                    c_copy["semantic_score"] = sem_sim
-                    c_copy["final_score"] = combined_score
-                    scored_candidates.append(c_copy)
-
-                scored_candidates.sort(key=lambda x: x["final_score"], reverse=True)
-                return scored_candidates[:top_k]
-            except Exception as e:
-                logger.warning("Reranking failed (%s), falling back to RRF results", e)
-
-        return clean_results[:top_k]
+        return (clean_results or fused)[:top_k]

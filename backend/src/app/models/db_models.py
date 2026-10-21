@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models for backend_new."""
+"""SQLAlchemy ORM models for the backend."""
 
 import uuid
 from datetime import UTC, datetime
@@ -55,7 +55,7 @@ class Document(Base):
     filepath = Column(String, nullable=True)
     subject = Column(String, nullable=False)  # PJOK / IPAS / PKN / etc.
     status = Column(String, nullable=False, default="pending")  # pending / processing / ready / failed
-    chunking_strategy = Column(String, nullable=True, default="fixed")  # fixed / semantic
+    chunking_strategy = Column(String, nullable=True, default="fixed")  # legacy; only "fixed" exists
     error_message = Column(Text, nullable=True)
     warning_message = Column(Text, nullable=True)  # e.g. content does not match the chosen subject
     uploaded_at = Column(DateTime, default=utcnow)
@@ -74,7 +74,7 @@ class Chunk(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     document_id = Column(String, ForeignKey("documents.id"), nullable=False, index=True)
     text = Column(Text, nullable=False)
-    category = Column(String, nullable=False, default="materi_pokok")  # Backward compatibility: materi_pokok / uraian_materi / dll
+    category = Column(String, nullable=False, default="materi_pokok")  # materi_pokok / uraian_materi / studi_kasus / ...
     section_heading = Column(String, nullable=True)
     chapter = Column(String, nullable=True)
     page_number = Column(Integer, nullable=True)
@@ -180,7 +180,7 @@ class ValidationLog(Base):
     layer = Column(String, nullable=False)  # grounding / judge / pre_check
     score_or_verdict = Column(String, nullable=False)
     feedback = Column(Text, nullable=True)
-    aspect_evaluations = Column(Text, nullable=True)  # JSON-serialized breakdown of 6 judge aspects
+    aspect_evaluations = Column(Text, nullable=True)  # JSON-serialized breakdown of the judge aspects
     created_at = Column(DateTime, default=utcnow)
 
     question = relationship("Question", back_populates="validation_logs")
