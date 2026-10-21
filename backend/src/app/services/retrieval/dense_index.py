@@ -1,17 +1,18 @@
-"""Dense retrieval index using ChromaDB vector database and sentence-transformers."""
+"""Dense retrieval index using ChromaDB vector database and DeepInfra embeddings."""
 
 import logging
 from pathlib import Path
 from typing import Any
 
 import chromadb
-from sentence_transformers import SentenceTransformer
+
+from app.services.retrieval.embedder import DeepInfraEmbedder
 
 logger = logging.getLogger(__name__)
 
 
 class DenseIndex:
-    """Vector index powered by ChromaDB persistent storage and SentenceTransformer."""
+    """Vector index powered by ChromaDB persistent storage and DeepInfra embeddings."""
 
     def __init__(
         self,
@@ -26,17 +27,18 @@ class DenseIndex:
         Path(persist_dir).mkdir(parents=True, exist_ok=True)
         logger.info("Initializing DenseIndex with model '%s' in '%s'...", embedding_model_name, persist_dir)
 
-        self._model = SentenceTransformer(embedding_model_name)
+        self._model = DeepInfraEmbedder(embedding_model_name)
         self.client = chromadb.PersistentClient(path=persist_dir)
         self.collection = self.client.get_or_create_collection(
             name=collection_name,
-            metadata={"hnsw:space": "cosine"}
+            metadata={"hnsw:space": "cosine"},
+            embedding_function=None,  # vectors always come from DeepInfra; skip Chroma's local ONNX default
         )
         logger.info("DenseIndex initialized. Current collection count: %d", self.collection.count())
 
     @property
-    def model(self) -> SentenceTransformer:
-        """Access underlying SentenceTransformer model (e.g. for grounding validation)."""
+    def model(self) -> DeepInfraEmbedder:
+        """Access the embedder (e.g. for grounding validation)."""
         return self._model
 
     def index_chunks(self, chunks: list[dict[str, Any]]) -> None:

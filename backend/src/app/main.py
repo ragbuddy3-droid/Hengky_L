@@ -29,7 +29,7 @@ def _prewarm_models() -> None:
         dense_idx.model.encode(["pemanasan model"], normalize_embeddings=True)
         get_chat_model(is_judge=False)
         get_chat_model(is_judge=True)
-        logger.info("Embedding and chat models pre-warmed.")
+        logger.info("Embedding API and chat models pre-warmed.")
     except Exception as e:
         logger.warning("Model pre-warm failed (will load lazily): %s", e)
 
@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
     # Pre-compile LangGraph StateGraph
     get_aqg_graph()
 
-    # Load the embedding model now instead of during the first generation request (~30s)
+    # Open the embedding and chat clients now instead of during the first generation request
     await asyncio.to_thread(_prewarm_models)
 
     purge_task = asyncio.create_task(_purge_guest_data_periodically())

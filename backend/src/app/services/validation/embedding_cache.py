@@ -1,4 +1,4 @@
-"""In-memory embedding cache to avoid redundant SentenceTransformer encode calls."""
+"""In-memory embedding cache to avoid redundant embedding API calls."""
 
 import hashlib
 import logging
