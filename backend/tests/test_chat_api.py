@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 from app.api.v1 import chat
 from app.main import app
 from app.models.db_models import ChatSession, Document, Question
+from app.services.chat import handler
+from app.services.chat.state_manager import ChatStateManager
 from app.services.generation import runner
 
 GUEST_ID = "tamu-uji"
@@ -155,3 +157,15 @@ def test_question_actions_via_chat(db_factory, monkeypatch):
     # While it runs, another change is refused
     send("Soal nomor 2 terlalu mudah")
     assert len(jobs) == 1
+
+
+def test_only_one_of_two_simultaneous_starts_runs(db_factory):
+    """Two requests that both saw 'idle' must not both start a job (conditional UPDATE)."""
+    _, session_id = _seed_session(db_factory)
+    started = []
+    for _ in range(2):
+        with db_factory() as db:
+            started.append(handler._start_background(db, session_id, ChatStateManager(session_id, db), "Tunggu", 3))
+            db.commit()
+    assert started[0] is not None
+    assert started[1] is None

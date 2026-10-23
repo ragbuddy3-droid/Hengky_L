@@ -39,14 +39,21 @@ class ChatReply:
     job: tuple[JobKind, tuple[Any, ...]] | None = None  # background job for the endpoint to schedule
 
 
-def _start_background(db: Session, session_id: str, manager: ChatStateManager, text: str, count: int) -> ChatMessage:
-    """Post the "please wait" message and mark the session as running before the job starts (no 'idle' gap for polling)."""
+def _start_background(db: Session, session_id: str, manager: ChatStateManager, text: str, count: int) -> ChatMessage | None:
+    """Mark the session as running and post the "please wait" message before the job starts (no 'idle' gap for polling).
+
+    Returns None when another request already started a job: the conditional UPDATE lets only one of two
+    simultaneous requests through.
+    """
+    started = (
+        db.query(ChatSession)
+        .filter(ChatSession.id == session_id, ChatSession.generation_status != "running")
+        .update({ChatSession.generation_status: "running", ChatSession.generation_count: count})
+    )
+    if not started:
+        return None
     bot_msg = manager.add_message("assistant", text)
-    db.query(ChatSession).filter(ChatSession.id == session_id).update({
-        ChatSession.generation_status: "running",
-        ChatSession.generation_count: count,
-        ChatSession.generation_message_id: bot_msg.id,
-    })
+    db.query(ChatSession).filter(ChatSession.id == session_id).update({ChatSession.generation_message_id: bot_msg.id})
     return bot_msg
 
 
@@ -63,6 +70,8 @@ def _generate(db: Session, session: ChatSession, owner: Owner, manager: ChatStat
         f"Sedang membuat {params.num_questions} soal ({params.bloom_level or 'Beragam Level'}). Mohon tunggu sebentar...",
         params.num_questions,
     )
+    if bot_msg is None:
+        return ChatReply(manager.add_message("assistant", GENERATION_RUNNING_REPLY))
     consume(db, owner, "generate")
     return ChatReply(bot_msg, ("generate", (session.id, content, params)))
 
@@ -92,6 +101,8 @@ def _change_question(
     verb = "Membuat ulang" if intent.intent == "regenerate" else "Merevisi"
     target = f" menjadi {level}" if level else ""
     bot_msg = _start_background(db, session.id, manager, f"{verb} Soal #{number}{target}. Mohon tunggu sebentar...", 1)
+    if bot_msg is None:
+        return ChatReply(manager.add_message("assistant", GENERATION_RUNNING_REPLY))
     return ChatReply(bot_msg, ("revise", (session.id, question.id, intent.intent, level, intent.instruction)))
 
 

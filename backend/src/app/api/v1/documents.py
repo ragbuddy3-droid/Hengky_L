@@ -12,7 +12,7 @@ from app.services.auth.guest_quota import GUEST_LIMIT_MESSAGES, can_use
 from app.services.auth.owner import Owner
 from app.services.documents import create_document, delete_documents, owned_document, remove_document_files
 from app.services.ingestion.pipeline import process_document
-from app.services.ingestion.validation import DocumentRejected, validate_pdf_bytes
+from app.services.ingestion.validation import DocumentRejected, check_upload_size, validate_pdf_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +55,9 @@ async def upload_document(
     if not can_use(db, owner, "upload"):
         raise HTTPException(status_code=403, detail=GUEST_LIMIT_MESSAGES["upload"])
 
-    content = await file.read()
     try:
+        check_upload_size(file.size)
+        content = await file.read()
         validate_pdf_bytes(content)
     except DocumentRejected as e:
         logger.warning("Upload rejected: file='%s': %s", file.filename, e.user_message)

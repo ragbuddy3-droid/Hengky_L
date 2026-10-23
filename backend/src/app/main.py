@@ -58,7 +58,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=get_settings().app.cors_origins or ["*"],
+    allow_origins=get_settings().app.cors_origins,  # never "*": with credentials any site could read user data
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

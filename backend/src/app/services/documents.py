@@ -26,7 +26,8 @@ def create_document(db: Session, owner: Owner, filename: str, subject: str, cont
     doc_id = str(uuid.uuid4())
     raw_dir = get_settings().paths.raw_dir
     raw_dir.mkdir(parents=True, exist_ok=True)
-    file_path = raw_dir / f"{doc_id}_{filename}"
+    # The client-sent name may hold path parts ("..\\x.pdf"); keep only the last one
+    file_path = raw_dir / f"{doc_id}_{Path(filename).name}"
     file_path.write_bytes(content)
 
     logger.info("Upload received: file='%s', subject='%s', size=%.2fMB, doc_id='%s'",

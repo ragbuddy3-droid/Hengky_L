@@ -58,10 +58,15 @@ class DocumentCheck(BaseModel):
     reason: str = ""
 
 
+def check_upload_size(size: int | None) -> None:
+    """Run before the upload is read into memory; None (size unknown) passes here and is checked after reading."""
+    if size is not None and size > MAX_UPLOAD_MB * 1024 * 1024:
+        raise DocumentRejected(f"Ukuran file melebihi {MAX_UPLOAD_MB} MB.")
+
+
 def validate_pdf_bytes(content: bytes) -> None:
     """Cheap synchronous checks run before the upload is stored."""
-    if len(content) > MAX_UPLOAD_MB * 1024 * 1024:
-        raise DocumentRejected(f"Ukuran file melebihi {MAX_UPLOAD_MB} MB.")
+    check_upload_size(len(content))
     if not content.startswith(b"%PDF-"):
         raise DocumentRejected("File bukan PDF yang valid.")
     try:

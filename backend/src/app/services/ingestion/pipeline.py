@@ -12,7 +12,7 @@ from app.services.auth.guest_quota import refund
 from app.services.ingestion.extractor import extract_pages_from_pdf
 from app.services.ingestion.factory import chunk_pages
 from app.services.ingestion.validation import DocumentRejected, check_document
-from app.services.retrieval.retriever import get_shared_dense_index, invalidate_sparse_cache
+from app.services.retrieval.retriever import delete_document_vectors, get_shared_dense_index, invalidate_sparse_cache
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,14 @@ def process_document(document_id: str, file_path: str) -> None:
         invalidate_sparse_cache(document_id)
         logger.info("[Ingestion] Indexed chunks into ChromaDB in %.2fs", time.time() - step_start)
 
-        _set_document_status(document_id, "ready", warning_message=warning)
+        if not _set_document_status(document_id, "ready", warning_message=warning):
+            # Deleted while processing: its delete ran before these chunks and vectors existed
+            logger.info("[Ingestion] doc_id='%s' was deleted during processing; removing its chunks", document_id)
+            with get_session() as db:
+                db.query(Chunk).filter(Chunk.document_id == document_id).delete()
+                db.commit()
+            delete_document_vectors(document_id)
+            return
         logger.info("[Ingestion] COMPLETE doc_id='%s' in %.2fs (chunks=%d)", document_id, time.time() - total_start, len(rows))
 
     except DocumentRejected as e:
