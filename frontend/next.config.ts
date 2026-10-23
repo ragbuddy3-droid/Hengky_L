@@ -10,6 +10,9 @@ const LEGACY_ROUTES: Record<string, string> = {
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  experimental: {
+    agentUpgrade: "security",
+  },
   redirects() {
     return Object.entries(LEGACY_ROUTES).flatMap(([from, to]) => [
       { source: `/${from}`, destination: `/${to}`, permanent: true },
