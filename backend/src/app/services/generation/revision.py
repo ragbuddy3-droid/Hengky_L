@@ -8,16 +8,10 @@ drifts away from the material is repaired or ends up as "needs_review" like any 
 import logging
 from typing import Any, Literal, cast
 
-from app.graph.nodes import (
-    cached_analyses,
-    ensure_analyses,
-    ensure_plans,
-    generate_and_validate,
-    validate_candidate,
-    validation_input,
-)
-from app.graph.state import AQGState
 from app.services.generation import progress
+from app.services.generation.graph.state import AQGState
+from app.services.generation.graph.validation import validate_candidate, validation_input
+from app.services.generation.pipeline import cached_analyses, ensure_analyses, ensure_plans, generate_and_validate
 from app.services.generation.planner import source_reference, valid_points
 from app.services.generation.schemas import CognitivePlan, QuestionBlueprint
 from app.services.generation.stage_runners import run_refinement_a

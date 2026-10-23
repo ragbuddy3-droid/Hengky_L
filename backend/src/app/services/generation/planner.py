@@ -207,9 +207,9 @@ def _load_few_shot(document_id: str, bloom_level: str) -> str:
         )
         good = [
             q for q in past_qs
-            if not find_clarity_issue(str(q.question_text))
-            and not is_reflective_question(str(q.question_text))
-            and not find_book_navigation_issue(str(q.question_text))
+            if not find_clarity_issue(q.question_text)
+            and not is_reflective_question(q.question_text)
+            and not find_book_navigation_issue(q.question_text)
         ][:2]
         if not good:
             return NO_FEW_SHOT

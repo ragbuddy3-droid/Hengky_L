@@ -110,3 +110,11 @@ class PromptStageTrace(BaseModel):
     status: str = Field(default="success", description="success / error / fallback")
     error_message: str | None = Field(default=None, description="Pesan error jika ada")
     has_fallback: bool = Field(default=False, description="True jika output menggunakan data fallback/dummy")
+
+
+class GenerateParams(BaseModel):
+    """What a chat request asks the generation graph for."""
+
+    num_questions: int = 5
+    chapter: str | None = None
+    bloom_level: str | None = None

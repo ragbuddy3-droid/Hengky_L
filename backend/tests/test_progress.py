@@ -15,8 +15,7 @@ def test_late_subscriber_gets_history_then_live_events():
 
         async def consume() -> None:
             async for event in progress.subscribe("s1"):
-                if event is not None:
-                    received.append(event)
+                received.append(event)
 
         consumer = asyncio.create_task(consume())
         await asyncio.sleep(0)

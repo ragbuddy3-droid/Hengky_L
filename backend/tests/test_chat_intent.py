@@ -2,7 +2,7 @@
 
 from app.services.chat import intent as intent_mod
 from app.services.chat.intent import ChatIntent, is_greeting, parse_question_action, route_message
-from app.services.generation.runner import format_generation_summary
+from app.services.generation.messages import format_generation_summary
 
 
 def test_regenerate_is_not_mistaken_for_new_generation():

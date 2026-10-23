@@ -85,7 +85,6 @@ def test_pipeline_rejection_refunds_quota_and_stores_nothing(db_factory, monkeyp
     assert client.get("/api/v1/auth/quota").json()["can_upload"] is False
 
     indexed: list = []
-    monkeypatch.setattr(pipeline, "get_session", db_factory)
     monkeypatch.setattr(pipeline, "extract_pages_from_pdf", lambda path: ["halaman"])
     monkeypatch.setattr(pipeline, "chunk_pages", lambda pages: _chunks())
     monkeypatch.setattr(pipeline, "get_shared_dense_index", lambda: SimpleNamespace(index_chunks=indexed.append))

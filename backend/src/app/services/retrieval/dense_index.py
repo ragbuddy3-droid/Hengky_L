@@ -49,15 +49,16 @@ class DenseIndex:
 
         texts = [c["text"] for c in chunks]
         ids = [c["id"] for c in chunks]
-        metadatas = [
+        # Rows come flat from the ingestion pipeline; Chroma metadata must not contain None
+        metadatas: list[Any] = [
             {
-                "document_id": str(c.get("metadata", {}).get("document_id") or c.get("document_id") or ""),
-                "category": str(c.get("metadata", {}).get("category") or c.get("category") or "materi_pokok"),
-                "chapter": str(c.get("metadata", {}).get("chapter") or c.get("chapter") or ""),
-                "section_heading": str(c.get("metadata", {}).get("section_heading") or c.get("section_heading") or ""),
-                "page_number": int(c.get("metadata", {}).get("page_number") or c.get("page_number") or 1),
-                "chunk_index": int(c.get("metadata", {}).get("chunk_index") or c.get("chunk_index") or 0),
-                "section_type": str(c.get("metadata", {}).get("section_type") or c.get("section_type") or "materi_pokok"),
+                "document_id": str(c.get("document_id") or ""),
+                "category": str(c.get("category") or "materi_pokok"),
+                "chapter": str(c.get("chapter") or ""),
+                "section_heading": str(c.get("section_heading") or ""),
+                "page_number": int(c.get("page_number") or 1),
+                "chunk_index": int(c.get("chunk_index") or 0),
+                "section_type": str(c.get("section_type") or "materi_pokok"),
             }
             for c in chunks
         ]
@@ -107,9 +108,10 @@ class DenseIndex:
 
         output: list[dict[str, Any]] = []
         if results and results["ids"] and len(results["ids"][0]) > 0:
+            documents = results["documents"] or [[]]
             for idx in range(len(results["ids"][0])):
                 chunk_id = results["ids"][0][idx]
-                doc_text = results["documents"][0][idx]
+                doc_text = documents[0][idx]
                 metadata = results["metadatas"][0][idx] if results["metadatas"] else {}
                 dist = results["distances"][0][idx] if results["distances"] else 0.0
                 score = 1.0 - dist  # Cosine similarity score

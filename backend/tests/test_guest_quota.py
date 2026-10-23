@@ -2,21 +2,15 @@
 
 import asyncio
 import io
-from contextlib import contextmanager
 
 import pytest
 from fastapi.testclient import TestClient
 from pypdf import PdfWriter
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from app.api import deps
-from app.api.v1 import auth, chat, documents
-from app.core.database import Base
+from app.api.v1 import chat, documents
+from app.core.config import get_settings
 from app.main import app
 from app.models.db_models import ChatSession, Document
-from app.services.auth import data
 from app.services.auth.guest_quota import GUEST_LIMIT_MESSAGES
 from app.services.generation import runner
 
@@ -34,25 +28,11 @@ PDF = ("buku.pdf", make_pdf(), "application/pdf")
 
 
 @pytest.fixture
-def db_factory(monkeypatch, tmp_path):
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine, autoflush=False)
-
-    @contextmanager
-    def fake_get_session():
-        db = factory()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    for module in (chat, documents, auth, deps, data, runner):
-        monkeypatch.setattr(module, "get_session", fake_get_session)
-    monkeypatch.setattr(data, "delete_document_vectors", lambda doc_id: None)
+def db_factory(db_factory, monkeypatch, tmp_path):
+    """The shared in-memory DB, with uploads written to tmp_path and ingestion skipped."""
     monkeypatch.setattr(documents, "process_document", lambda *args: None)
-    monkeypatch.setattr(documents, "_RAW_DATA_DIR", tmp_path)
-    return fake_get_session
+    monkeypatch.setattr(get_settings().paths, "data_dir", tmp_path)
+    return db_factory
 
 
 @pytest.fixture

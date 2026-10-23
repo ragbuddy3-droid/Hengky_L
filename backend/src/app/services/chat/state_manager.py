@@ -34,7 +34,7 @@ class ChatStateManager:
         msg = ChatMessage(session_id=self.session_id, role=role, content=content)
         self.db.add(msg)
         self.db.flush()
-        logger.info("Added chat message (session_id='%s', role='%s', length=%d)", self.session_id, role, len(content))
+        logger.debug("Added chat message (session_id='%s', role='%s', length=%d)", self.session_id, role, len(content))
         return msg
 
     def recent_history(self, limit: int = 6) -> list[ChatMessage]:

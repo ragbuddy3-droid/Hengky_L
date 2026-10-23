@@ -103,13 +103,13 @@ def replace_question(question_id: str, q: dict[str, Any]) -> dict[str, Any] | No
         row = db.get(Question, question_id)
         if row is None:
             return None
-        q = _with_defaults(q, question_id, str(row.source_reference or ""))
+        q = _with_defaults(q, question_id, row.source_reference or "")
         for column, value in _content_columns(q).items():
             setattr(row, column, value)
         if q.get("chunk_id"):
-            row.chunk_ids = _dumps([q["chunk_id"]])  # type: ignore[assignment]
-        row.bloom_level = q.get("bloom_level") or row.bloom_level  # type: ignore[assignment]
-        row.revision_count = (row.revision_count or 0) + 1  # type: ignore[assignment]
+            row.chunk_ids = _dumps([q["chunk_id"]])
+        row.bloom_level = q.get("bloom_level") or row.bloom_level
+        row.revision_count = (row.revision_count or 0) + 1
 
         db.query(ValidationLog).filter(ValidationLog.question_id == question_id).delete()
         db.add_all(_validation_log_rows(question_id, q.get("validation_logs", [])))

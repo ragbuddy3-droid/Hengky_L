@@ -3,8 +3,7 @@
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
-from functools import lru_cache
-from pathlib import Path
+from functools import cache
 
 import bcrypt
 import jwt
@@ -14,7 +13,6 @@ from app.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 _ALGORITHM = "HS256"
-_SECRET_FILE = Path("data/.jwt_secret")
 _BCRYPT_MAX_BYTES = 72  # bcrypt hanya memakai 72 byte pertama
 
 
@@ -33,18 +31,19 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-@lru_cache
+@cache
 def _jwt_secret() -> str:
     """JWT_SECRET dari .env; tanpa itu, rahasia acak disimpan di data/ agar login bertahan saat server restart."""
-    configured = get_settings().auth.jwt_secret
-    if configured:
-        return configured
-    if _SECRET_FILE.exists():
-        return _SECRET_FILE.read_text(encoding="utf-8").strip()
+    settings = get_settings()
+    if settings.auth.jwt_secret:
+        return settings.auth.jwt_secret
+    secret_file = settings.paths.jwt_secret_file
+    if secret_file.exists():
+        return secret_file.read_text(encoding="utf-8").strip()
     secret = secrets.token_urlsafe(48)
-    _SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _SECRET_FILE.write_text(secret, encoding="utf-8")
-    logger.warning("JWT_SECRET is not set; generated one at %s", _SECRET_FILE)
+    secret_file.parent.mkdir(parents=True, exist_ok=True)
+    secret_file.write_text(secret, encoding="utf-8")
+    logger.warning("JWT_SECRET is not set; generated one at %s", secret_file)
     return secret
 
 

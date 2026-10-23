@@ -1,7 +1,6 @@
 """Sparse lexical retrieval using BM25 Okapi with Indonesian text tokenization."""
 
 import logging
-import re
 import string
 from typing import Any
 
@@ -31,13 +30,8 @@ class SparseIndex:
         """Tokenize text into lowercase words stripped of punctuation and stopwords."""
         if not text:
             return []
-        cleaned = text.translate(self._punct_table).lower()
-        tokens = [
-            t.strip()
-            for t in re.split(r'\s+', cleaned)
-            if len(t.strip()) > 1 and t.strip() not in INDONESIAN_STOPWORDS
-        ]
-        return tokens
+        words = text.translate(self._punct_table).lower().split()
+        return [w for w in words if len(w) > 1 and w not in INDONESIAN_STOPWORDS]
 
     def build_index(self, chunks: list[dict[str, Any]]) -> None:
         """Build BM25 index from document chunks."""

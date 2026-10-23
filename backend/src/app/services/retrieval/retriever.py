@@ -11,6 +11,7 @@ import logging
 import random
 import re
 from collections import defaultdict
+from functools import cache
 from typing import Any, NamedTuple
 
 from app.core.config import get_settings
@@ -49,21 +50,18 @@ class RetrievalResult(NamedTuple):
 
 # ── Shared indexes ──
 
-_dense_index: DenseIndex | None = None
 _sparse_cache: dict[str, SparseIndex] = {}
 
 
+@cache
 def get_shared_dense_index() -> DenseIndex:
-    """Get or create the singleton DenseIndex."""
-    global _dense_index
-    if _dense_index is None:
-        settings = get_settings()
-        _dense_index = DenseIndex(
-            persist_dir=settings.CHROMA_PERSIST_DIR,
-            collection_name="rag_aqg_chunks",
-            embedding_model_name=settings.EMBEDDING_MODEL,
-        )
-    return _dense_index
+    """The singleton DenseIndex."""
+    settings = get_settings()
+    return DenseIndex(
+        persist_dir=settings.database.chroma_persist_dir,
+        collection_name="rag_aqg_chunks",
+        embedding_model_name=settings.llm.embedding_model,
+    )
 
 
 def _get_sparse_index(document_id: str, chunks: list[dict[str, Any]]) -> SparseIndex:
@@ -81,6 +79,15 @@ def invalidate_sparse_cache(document_id: str) -> None:
     """Drop cached BM25 indexes of a deleted document."""
     for key in [k for k in _sparse_cache if k.startswith(f"{document_id}_")]:
         del _sparse_cache[key]
+
+
+def delete_document_vectors(document_id: str) -> None:
+    """Remove a deleted document from the dense index and the BM25 cache."""
+    invalidate_sparse_cache(document_id)
+    try:
+        get_shared_dense_index().delete_by_document(document_id)
+    except Exception as e:
+        logger.warning("Failed to delete vectors from ChromaDB for doc_id='%s': %s", document_id, e)
 
 
 # ── Query & chunk helpers ──
@@ -190,14 +197,14 @@ def _hybrid_rank(
     hybrid = HybridSearch(
         dense_index=get_shared_dense_index(),
         sparse_index=_get_sparse_index(document_id, chunks),
-        dense_weight=settings.HYBRID_DENSE_WEIGHT,
-        sparse_weight=settings.HYBRID_SPARSE_WEIGHT,
+        dense_weight=settings.retrieval.hybrid_dense_weight,
+        sparse_weight=settings.retrieval.hybrid_sparse_weight,
     )
     candidates = hybrid.search(
         query=query,
         top_k=limit * 2,
         document_id=document_id,
-        candidate_k=settings.CANDIDATE_TOP_K,
+        candidate_k=settings.retrieval.candidate_top_k,
         chapters=chapters,
     )
     allowed = {c["id"] for c in chunks}
@@ -215,7 +222,7 @@ def retrieve_chunks(
 ) -> RetrievalResult:
     """Choose the fewest relevant chunks whose estimated capacity covers `needed` question candidates."""
     settings = get_settings()
-    pool_size = settings.MAX_CONTEXT_CHUNKS + settings.RESERVE_CHUNKS
+    pool_size = settings.generation.max_context_chunks + settings.retrieval.reserve_chunks
 
     scoped = filter_by_chapter(chunks, chapter) if chapter else chunks
     chapters = sorted({c["metadata"]["chapter"] for c in scoped}) if scoped is not chunks else None
@@ -228,11 +235,11 @@ def retrieve_chunks(
     else:
         query = f"{topic_query} {chapters[0]}" if chapters else topic_query
         ranked = drop_weak_matches(
-            _hybrid_rank(query, document_id, scoped, chapters, pool_size), settings.MIN_RELATIVE_SCORE,
+            _hybrid_rank(query, document_id, scoped, chapters, pool_size), settings.retrieval.min_relative_score,
         )
         logger.info("[Retrieval] query='%s' -> %d relevant candidates.", query, len(ranked))
 
-    selected, reserve = select_by_capacity(ranked[:pool_size] or scoped[:pool_size], needed, settings.MAX_CONTEXT_CHUNKS)
+    selected, reserve = select_by_capacity(ranked[:pool_size] or scoped[:pool_size], needed, settings.generation.max_context_chunks)
     if not topic_query:
         selected.sort(key=lambda c: c["metadata"].get("chunk_index", 0))
     logger.info(

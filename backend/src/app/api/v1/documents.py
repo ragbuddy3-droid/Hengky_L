@@ -1,18 +1,16 @@
 """Documents API router v1."""
 
 import logging
-import uuid
-from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile
+from sqlalchemy.orm import Session
 
-from app.api.deps import get_owner
-from app.core.database import get_session
+from app.api.deps import DbDep, OwnerDep
 from app.models.db_models import Chunk, Document
 from app.schemas.api_schemas import DocumentStatusResponse, DocumentUploadResponse
-from app.services.auth.data import remove_document_files
-from app.services.auth.guest_quota import GUEST_LIMIT_MESSAGES, can_use, consume
+from app.services.auth.guest_quota import GUEST_LIMIT_MESSAGES, can_use
 from app.services.auth.owner import Owner
+from app.services.documents import create_document, delete_documents, owned_document, remove_document_files
 from app.services.ingestion.pipeline import process_document
 from app.services.ingestion.validation import DocumentRejected, validate_pdf_bytes
 
@@ -20,12 +18,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-_RAW_DATA_DIR = Path("data/raw")
 _NOT_FOUND = "Dokumen tidak ditemukan"
 
 
-def _owned_document(db, document_id: str, owner: Owner) -> Document:
-    doc = db.query(Document).filter(Document.id == document_id, owner.clause(Document)).first()
+def _owned_document(db: Session, document_id: str, owner: Owner) -> Document:
+    doc = owned_document(db, document_id, owner)
     if not doc:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return doc
@@ -47,16 +44,16 @@ def _document_response(doc: Document) -> DocumentStatusResponse:
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile,
+    owner: OwnerDep,
+    db: DbDep,
     subject: str = Form(...),
-    owner: Owner = Depends(get_owner),
 ):
     """Upload a PDF and start ingestion in the background."""
     if not file.filename or not file.filename.lower().endswith('.pdf'):
         logger.warning("Upload rejected: non-PDF file '%s'", file.filename)
         raise HTTPException(status_code=400, detail="Hanya file dengan ekstensi .pdf yang didukung.")
-    with get_session() as db:
-        if not can_use(db, owner, "upload"):
-            raise HTTPException(status_code=403, detail=GUEST_LIMIT_MESSAGES["upload"])
+    if not can_use(db, owner, "upload"):
+        raise HTTPException(status_code=403, detail=GUEST_LIMIT_MESSAGES["upload"])
 
     content = await file.read()
     try:
@@ -65,76 +62,51 @@ async def upload_document(
         logger.warning("Upload rejected: file='%s': %s", file.filename, e.user_message)
         raise HTTPException(status_code=400, detail=e.user_message) from e
 
-    doc_id = str(uuid.uuid4())
-    _RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    file_path = _RAW_DATA_DIR / f"{doc_id}_{file.filename}"
-    file_path.write_bytes(content)
+    doc = create_document(db, owner, file.filename, subject, content)
+    db.commit()
 
-    logger.info("Upload received: file='%s', subject='%s', size=%.2fMB, doc_id='%s'",
-                file.filename, subject, len(content) / (1024 * 1024), doc_id)
-
-    with get_session() as db:
-        db.add(Document(
-            id=doc_id,
-            subject=subject,
-            status="pending",
-            filename=file.filename,
-            filepath=str(file_path),
-            **owner.fields(),
-        ))
-        consume(db, owner, "upload")
-        db.commit()
-
-    background_tasks.add_task(process_document, doc_id, str(file_path))
-    return DocumentUploadResponse(id=doc_id, status="pending", message="Dokumen berhasil diunggah dan pemrosesan dimulai.")
+    background_tasks.add_task(process_document, doc.id, str(doc.filepath))
+    return DocumentUploadResponse(id=doc.id, status="pending", message="Dokumen berhasil diunggah dan pemrosesan dimulai.")
 
 
 @router.get("/{document_id}", response_model=DocumentStatusResponse)
-def get_document_status(document_id: str, owner: Owner = Depends(get_owner)):
+def get_document_status(document_id: str, owner: OwnerDep, db: DbDep):
     """Get document status."""
-    with get_session() as db:
-        return _document_response(_owned_document(db, document_id, owner))
+    return _document_response(_owned_document(db, document_id, owner))
 
 
 @router.get("/", response_model=list[DocumentStatusResponse])
-def list_documents(owner: Owner = Depends(get_owner)):
+def list_documents(owner: OwnerDep, db: DbDep):
     """List the requester's documents."""
-    with get_session() as db:
-        docs = db.query(Document).filter(owner.clause(Document)).order_by(Document.uploaded_at.desc()).all()
-        return [_document_response(d) for d in docs]
+    docs = db.query(Document).filter(owner.clause(Document)).order_by(Document.uploaded_at.desc()).all()
+    return [_document_response(d) for d in docs]
 
 
 @router.get("/{document_id}/chunks")
-def get_document_chunks(document_id: str, owner: Owner = Depends(get_owner)):
+def get_document_chunks(document_id: str, owner: OwnerDep, db: DbDep):
     """Get all chunks for a specific document."""
-    with get_session() as db:
-        _owned_document(db, document_id, owner)
-
-        chunks = db.query(Chunk).filter(Chunk.document_id == document_id).order_by(Chunk.created_at).all()
-        return [
-            {
-                "id": c.id,
-                "document_id": c.document_id,
-                "text": c.text,
-                "category": c.category,
-                "section_heading": c.section_heading,
-                "chapter": c.chapter,
-                "word_count": len(c.text.split()) if c.text is not None else 0,
-                "created_at": c.created_at.strftime("%Y-%m-%d %H:%M:%S") if c.created_at is not None else None,
-            }
-            for c in chunks
-        ]
+    _owned_document(db, document_id, owner)
+    chunks = db.query(Chunk).filter(Chunk.document_id == document_id).order_by(Chunk.created_at).all()
+    return [
+        {
+            "id": c.id,
+            "document_id": c.document_id,
+            "text": c.text,
+            "category": c.category,
+            "section_heading": c.section_heading,
+            "chapter": c.chapter,
+            "word_count": len(c.text.split()) if c.text is not None else 0,
+            "created_at": c.created_at.strftime("%Y-%m-%d %H:%M:%S") if c.created_at is not None else None,
+        }
+        for c in chunks
+    ]
 
 
 @router.delete("/{document_id}")
-def delete_document(document_id: str, owner: Owner = Depends(get_owner)):
+def delete_document(document_id: str, owner: OwnerDep, db: DbDep):
     """Delete document, its chunks and raw file from SQLite, ChromaDB and disk."""
     logger.info("DELETE document: doc_id='%s'", document_id)
-    with get_session() as db:
-        doc = _owned_document(db, document_id, owner)
-        filepath = str(doc.filepath) if doc.filepath is not None else None
-        db.delete(doc)
-        db.commit()
-
-    remove_document_files([(document_id, filepath)])
+    removed = delete_documents(db, [_owned_document(db, document_id, owner)])
+    db.commit()
+    remove_document_files(removed)
     return {"status": "deleted"}

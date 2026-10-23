@@ -174,11 +174,11 @@ def parse_toc_from_pages(page_norms: list[str]) -> list[ChapterInfo]:
     toc_lines: list[str] = []
 
     for norm in page_norms[:15]:
-        lines = [l.strip() for l in norm.split('\n') if l.strip()]
+        lines = [ln.strip() for ln in norm.split('\n') if ln.strip()]
 
         is_toc_page = any(
-            re.search(r'\bdaftar\s+isi\b', l, re.IGNORECASE)
-            for l in lines[:5]
+            re.search(r'\bdaftar\s+isi\b', ln, re.IGNORECASE)
+            for ln in lines[:5]
         )
 
         if is_toc_page:
@@ -186,14 +186,14 @@ def parse_toc_from_pages(page_norms: list[str]) -> list[ChapterInfo]:
             toc_lines.extend(lines)
         elif in_toc:
             has_toc_entries = any(
-                re.search(r'\b(?:Bab|Unit|Tema|Pelajaran|Pembelajaran)\s+\d+', l, re.IGNORECASE)
-                or re.search(r'\.{3,}\s*\d+', l)
-                or re.match(r'^[A-Z]\.\s+', l)
-                for l in lines[:8]
+                re.search(r'\b(?:Bab|Unit|Tema|Pelajaran|Pembelajaran)\s+\d+', ln, re.IGNORECASE)
+                or re.search(r'\.{3,}\s*\d+', ln)
+                or re.match(r'^[A-Z]\.\s+', ln)
+                for ln in lines[:8]
             )
             is_other_fm = any(
-                any(fmt in l.lower() for fmt in ['daftar gambar', 'daftar tabel', 'petunjuk penggunaan', 'ada apa di buku', 'penjelasan fitur', 'pengenalan'])
-                for l in lines[:5]
+                any(fmt in ln.lower() for fmt in ['daftar gambar', 'daftar tabel', 'petunjuk penggunaan', 'ada apa di buku', 'penjelasan fitur', 'pengenalan'])
+                for ln in lines[:5]
             )
             if has_toc_entries and not is_other_fm:
                 toc_lines.extend(lines)
@@ -212,15 +212,15 @@ def parse_toc_from_pages(page_norms: list[str]) -> list[ChapterInfo]:
             continue
         raw_title = m.group(2).strip()
 
-        lines = [l.strip() for l in raw_title.split('\n') if l.strip()]
+        lines = [ln.strip() for ln in raw_title.split('\n') if ln.strip()]
         if not lines:
             continue
 
         title_parts = []
-        for l in lines:
-            if re.match(r'^[A-Z]\.\s+', l) or re.match(r'^(?:Topik|Bagian)\s+[A-Z]', l, re.IGNORECASE):
+        for ln in lines:
+            if re.match(r'^[A-Z]\.\s+', ln) or re.match(r'^(?:Topik|Bagian)\s+[A-Z]', ln, re.IGNORECASE):
                 break
-            cleaned = re.sub(r'\.{2,}\s*\d*', '', l)
+            cleaned = re.sub(r'\.{2,}\s*\d*', '', ln)
             cleaned = re.sub(r'\s+\d+$', '', cleaned)
             cleaned = re.sub(r'^\d+\s+', '', cleaned)
             cleaned = cleaned.strip(" :.-–—|")
@@ -370,23 +370,27 @@ def detect_chapter_running_header(page_norm: str, titles: dict[int, str]) -> tup
 
 def is_bab1_opener(lines: list[str]) -> bool:
     """Check if page lines represent a Bab 1 / Chapter 1 opener page."""
-    for l in lines[:6]:
-        if re.search(r'\b(?:Bab|Unit|Tema|Pelajaran|Pembelajaran)\s+([2-9]|[1-9]\d)\b', l, re.IGNORECASE):
+    for ln in lines[:6]:
+        if re.search(r'\b(?:Bab|Unit|Tema|Pelajaran|Pembelajaran)\s+([2-9]|[1-9]\d)\b', ln, re.IGNORECASE):
             return False
     for idx, line in enumerate(lines[:10]):
         if re.search(r'^\s*(?:Bab|Unit|Tema|Pelajaran|Pembelajaran)\s+(?:1|I|01)\b', line, re.IGNORECASE) and '...' not in line:
             return True
-        if re.match(r'^\s*(?:Bab|Unit|Tema|Pelajaran|Pembelajaran)\s*$', line, re.IGNORECASE) and idx + 1 < len(lines):
-            if re.match(r'^\s*(?:1|I|01)\s*$', lines[idx + 1].strip(), re.IGNORECASE):
-                return True
-        if re.match(r'^\s*(?:1|I|01)\s*$', line, re.IGNORECASE) and idx + 1 < len(lines):
-            if re.match(r'^\s*(?:Bab|Unit|Tema|Pelajaran|Pembelajaran)\s*$', lines[idx + 1].strip(), re.IGNORECASE):
-                return True
-    has_standalone_bab = any(l.strip().lower() == 'bab' for l in lines[:10])
-    has_standalone_one = any(l.strip() in ['1', '01', 'I'] for l in lines[:10])
-    if has_standalone_bab and has_standalone_one:
-        return True
-    return False
+        next_line = lines[idx + 1].strip() if idx + 1 < len(lines) else None
+        if next_line is None:
+            continue
+        # "Bab" and "1" on separate lines, in either order
+        if re.match(r'^\s*(?:Bab|Unit|Tema|Pelajaran|Pembelajaran)\s*$', line, re.IGNORECASE) and re.match(
+            r'^\s*(?:1|I|01)\s*$', next_line, re.IGNORECASE
+        ):
+            return True
+        if re.match(r'^\s*(?:1|I|01)\s*$', line, re.IGNORECASE) and re.match(
+            r'^\s*(?:Bab|Unit|Tema|Pelajaran|Pembelajaran)\s*$', next_line, re.IGNORECASE
+        ):
+            return True
+    has_standalone_bab = any(ln.strip().lower() == 'bab' for ln in lines[:10])
+    has_standalone_one = any(ln.strip() in ['1', '01', 'I'] for ln in lines[:10])
+    return bool(has_standalone_bab and has_standalone_one)
 
 
 def find_main_content_start(page_norms: list[str]) -> int:
@@ -396,7 +400,7 @@ def find_main_content_start(page_norms: list[str]) -> int:
     fm_indices: set[int] = set()
 
     for i, norm in enumerate(page_norms[:30]):
-        lines = [l.strip() for l in norm.split('\n') if l.strip()]
+        lines = [ln.strip() for ln in norm.split('\n') if ln.strip()]
         if not lines:
             fm_indices.add(i)
             continue
@@ -404,8 +408,8 @@ def find_main_content_start(page_norms: list[str]) -> int:
         t_lower = norm.lower()
 
         is_fm_header = any(
-            any(fmt in l.lower() for fmt in FRONT_MATTER_TITLES)
-            for l in lines[:6]
+            any(fmt in ln.lower() for fmt in FRONT_MATTER_TITLES)
+            for ln in lines[:6]
         )
 
         has_roman = any(
@@ -429,10 +433,10 @@ def find_main_content_start(page_norms: list[str]) -> int:
                 in_guide = False
         elif in_toc:
             has_toc_entries = any(
-                re.search(r'\b(?:Bab|Unit|Tema|Pelajaran)\s+\d+', l, re.IGNORECASE)
-                or re.search(r'\.{3,}\s*\d+', l)
-                or re.search(r'\b(?:[2-9]|[1-9]\d)\s*$', l)
-                for l in lines[:10]
+                re.search(r'\b(?:Bab|Unit|Tema|Pelajaran)\s+\d+', ln, re.IGNORECASE)
+                or re.search(r'\.{3,}\s*\d+', ln)
+                or re.search(r'\b(?:[2-9]|[1-9]\d)\s*$', ln)
+                for ln in lines[:10]
             )
             if has_toc_entries and i < 15:
                 fm_indices.add(i)

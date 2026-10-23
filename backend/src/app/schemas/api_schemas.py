@@ -39,15 +39,14 @@ def _clean_name(v: str) -> str:
     return v
 
 
+Name = Annotated[str, Field(max_length=80), AfterValidator(_clean_name)]
+
+
 class RegisterRequest(BaseModel):
-    name: str = Field(max_length=80)
+    name: Name
     email: EmailStr
     password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=128)
     remember: bool = False
-
-    @field_validator("name")
-    def clean_name(cls, v: str) -> str:
-        return _clean_name(v)
 
 
 class LoginRequest(BaseModel):
@@ -74,11 +73,7 @@ class GuestQuotaResponse(BaseModel):
 
 
 class UpdateProfileRequest(BaseModel):
-    name: str = Field(max_length=80)
-
-    @field_validator("name")
-    def clean_name(cls, v: str) -> str:
-        return _clean_name(v)
+    name: Name
 
 
 class ChangePasswordRequest(BaseModel):
@@ -141,12 +136,6 @@ class ChatMessageResponse(BaseModel):
     created_at: UtcDatetime = None
 
     model_config = ConfigDict(from_attributes=True)
-
-
-class GenerateParams(BaseModel):
-    num_questions: int = 5
-    chapter: str | None = None
-    bloom_level: str | None = None
 
 
 class UsedChunkResponse(BaseModel):

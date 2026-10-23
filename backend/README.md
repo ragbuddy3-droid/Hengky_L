@@ -16,5 +16,25 @@ Backend Soalnya, sistem RAG-AQG (Retrieval-Augmented Generation for Automatic Qu
 ```bash
 # Pastikan uv terinstal
 uv sync
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uv run fastapi dev        # http://127.0.0.1:8000, auto-reload
+# produksi: uv run fastapi run
 ```
+
+## Struktur Kode (`src/app`)
+```
+main.py            app FastAPI + lifespan (init DB, purge data tamu)
+core/              config (YAML + .env), database, migrations, logging
+api/               deps (DbDep, OwnerDep) + router v1: auth, documents, chat, questions
+models/            ORM SQLAlchemy 2.0
+schemas/           request/response API
+services/
+  auth/            akun, tamu, kuota, token
+  documents.py     simpan & hapus dokumen
+  ingestion/       PDF -> chunk -> SQLite + ChromaDB
+  retrieval/       dense + BM25 hybrid search
+  generation/      pipeline multi-stage + graph/ (LangGraph sesi & validasi per soal)
+  chat/            routing intent & diskusi soal
+  questions/       penyimpanan soal
+  validation/      grounding & quality checks
+```
+Path relatif di `configs/settings.yaml` (database, chroma, `data/`) selalu dihitung dari folder `backend/`.

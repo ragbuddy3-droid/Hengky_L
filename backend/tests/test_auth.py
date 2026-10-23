@@ -1,42 +1,14 @@
 """API tests for login, guest mode, data ownership and guest data purge (in-memory DB)."""
 
-from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
-import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from app.api import deps
-from app.api.v1 import auth, chat, documents, questions
-from app.core.database import Base
 from app.main import app
 from app.models.db_models import ChatSession, Document, Question, User
-from app.services.auth import data
+from app.services.auth import accounts
 
 PASSWORD = "rahasia123"
-
-
-@pytest.fixture
-def db_factory(monkeypatch):
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine, autoflush=False)
-
-    @contextmanager
-    def fake_get_session():
-        db = factory()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    for module in (chat, documents, questions, auth, deps, data):
-        monkeypatch.setattr(module, "get_session", fake_get_session)
-    monkeypatch.setattr(data, "delete_document_vectors", lambda doc_id: None)
-    return fake_get_session
 
 
 def _guest(guest_id: str) -> TestClient:
@@ -178,7 +150,7 @@ def test_purge_stale_guest_data(db_factory):
         db.get(ChatSession, busy_sess).generation_status = "running"
         db.commit()
 
-    assert data.purge_stale_guest_data() == 1
+    assert accounts.purge_stale_guest_data() == 1
     with db_factory() as db:
         remaining = {d.id for d in db.query(Document).all()}
         assert remaining == {fresh_doc, busy_doc, legacy_doc}

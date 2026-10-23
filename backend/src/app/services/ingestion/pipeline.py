@@ -32,7 +32,7 @@ def _set_document_status(
         updated = db.query(Document).filter(Document.id == document_id).update(values)
         if status == "failed":
             doc = db.get(Document, document_id)
-            refund(db, doc.guest_id if doc and doc.user_id is None else None, "upload")  # type: ignore[arg-type]
+            refund(db, doc.guest_id if doc and doc.user_id is None else None, "upload")
         db.commit()
         return bool(updated)
 
@@ -40,7 +40,7 @@ def _set_document_status(
 def _document_subject(document_id: str) -> str:
     with get_session() as db:
         doc = db.get(Document, document_id)
-        return str(doc.subject) if doc else ""
+        return doc.subject if doc else ""
 
 
 def process_document(document_id: str, file_path: str) -> None:
@@ -97,11 +97,3 @@ def process_document(document_id: str, file_path: str) -> None:
         logger.error("[Ingestion] FAILED doc_id='%s' after %.2fs: %s", document_id, time.time() - total_start, e, exc_info=True)
         _set_document_status(document_id, "failed", GENERIC_FAILURE_MESSAGE)
 
-
-def delete_document_vectors(document_id: str) -> None:
-    """Remove a deleted document from the dense index and the BM25 cache."""
-    invalidate_sparse_cache(document_id)
-    try:
-        get_shared_dense_index().delete_by_document(document_id)
-    except Exception as e:
-        logger.warning("Failed to delete vectors from ChromaDB for doc_id='%s': %s", document_id, e)

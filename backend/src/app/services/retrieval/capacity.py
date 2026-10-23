@@ -78,7 +78,7 @@ def estimate_capacity(chunk: dict[str, Any]) -> int:
     capacity = math.ceil(informative_sentence_count(text) / 2)
     if (chunk.get("metadata") or {}).get("category") not in PREFERRED_CATEGORIES:
         capacity -= 1
-    return max(0, min(get_settings().MAX_QUESTIONS_PER_CHUNK, capacity))
+    return max(0, min(get_settings().retrieval.max_questions_per_chunk, capacity))
 
 
 def relevance_score(chunk: dict[str, Any]) -> float | None:

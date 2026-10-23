@@ -133,7 +133,7 @@ def _llm_semaphore() -> asyncio.Semaphore:
     global _llm_slots
     loop = asyncio.get_running_loop()
     if _llm_slots is None or _llm_slots[0] is not loop:
-        _llm_slots = (loop, asyncio.Semaphore(get_settings().GENERATION_CONCURRENCY))
+        _llm_slots = (loop, asyncio.Semaphore(get_settings().generation.concurrency))
     return _llm_slots[1]
 
 

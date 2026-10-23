@@ -5,9 +5,7 @@ description = "Soalnya backend: RAG-AQG (FastAPI + LangGraph)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.143.0",
-    "uvicorn[standard]>=0.54.0",
-    "python-multipart>=0.0.32",
+    "fastapi[standard-no-fastapi-cloud-cli]>=0.143.0",
     "langchain-core>=1.6.9",
     "langgraph>=1.2.14",
     "sqlalchemy>=2.1.4",
@@ -24,6 +22,9 @@ dependencies = [
     "bcrypt>=5.0.0",
     "pyjwt>=2.15.1",
 ]
+
+[tool.fastapi]
+entrypoint = "app.main:app"
 
 [build-system]
 requires = ["hatchling"]

@@ -9,14 +9,12 @@ Usage (from the backend/ directory):
 
 import argparse
 import csv
-import sys
 from pathlib import Path
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(BACKEND_DIR / "src"))
-
-from app.core.database import get_session  # noqa: E402
-from app.models.db_models import Chunk, Document  # noqa: E402
+from app.core.config import BACKEND_DIR
+from app.core.database import get_session
+from app.core.migrations import init_db
+from app.models.db_models import Chunk, Document
 
 FIELDS = [
     "chunk_id",
@@ -53,6 +51,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    init_db()
 
     with get_session() as db:
         query = (

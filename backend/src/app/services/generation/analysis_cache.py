@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def stage1_prompt_key() -> str:
-    raw = f"{get_settings().LLM_GENERATOR_MODEL}\n{SYSTEM_ANALYSIS_PERSONA}\n{STAGE1_CONTEXT_UNDERSTANDING_PROMPT}"
+    raw = f"{get_settings().llm.generator_model}\n{SYSTEM_ANALYSIS_PERSONA}\n{STAGE1_CONTEXT_UNDERSTANDING_PROMPT}"
     return hashlib.md5(raw.encode("utf-8")).hexdigest()[:16]
 
 
@@ -36,9 +36,9 @@ def load_cached_analyses(chunk_ids: list[str]) -> dict[str, dict[str, Any]]:
         )
         cached = {}
         for row in rows:
-            trace = json.loads(str(row.trace))
+            trace = json.loads(row.trace)
             trace["status"] = "cached"
-            cached[str(row.chunk_id)] = {"analysis": json.loads(str(row.analysis)), "trace": trace}
+            cached[row.chunk_id] = {"analysis": json.loads(row.analysis), "trace": trace}
         return cached
 
 

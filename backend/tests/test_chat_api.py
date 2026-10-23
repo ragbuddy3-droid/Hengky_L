@@ -1,43 +1,17 @@
 """API tests for chat generation status, message timestamps, and question filters (in-memory DB)."""
 
 import asyncio
-from contextlib import contextmanager
 from datetime import datetime
 
-import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from app.api.v1 import chat, questions
-from app.core.database import Base
+from app.api.v1 import chat
 from app.main import app
 from app.models.db_models import ChatSession, Document, Question
 from app.services.generation import runner
 
 GUEST_ID = "tamu-uji"
 client = TestClient(app, cookies={"soalnya_guest": GUEST_ID})
-
-
-@pytest.fixture
-def db_factory(monkeypatch):
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine, autoflush=False)
-
-    @contextmanager
-    def fake_get_session():
-        db = factory()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    monkeypatch.setattr(chat, "get_session", fake_get_session)
-    monkeypatch.setattr(runner, "get_session", fake_get_session)
-    monkeypatch.setattr(questions, "get_session", fake_get_session)
-    return fake_get_session
 
 
 def _seed_session(get_session, filename="buku.pdf") -> tuple[str, str]:
@@ -103,6 +77,15 @@ def test_get_session_detail_404(db_factory):
     assert client.get("/api/v1/chat/sessions/tidak-ada").status_code == 404
 
 
+def test_generation_stream_reports_stored_status(db_factory):
+    assert client.get("/api/v1/chat/sessions/tidak-ada/generation/stream").status_code == 404
+
+    _, session_id = _seed_session(db_factory)
+    res = client.get(f"/api/v1/chat/sessions/{session_id}/generation/stream")
+    assert res.headers["content-type"].startswith("text/event-stream")
+    assert res.text == 'data: {"type":"done","status":"idle"}\n\n'
+
+
 def test_questions_include_document_and_filter(db_factory):
     doc_a, sess_a = _seed_session(db_factory, "buku-a.pdf")
     doc_b, sess_b = _seed_session(db_factory, "buku-b.pdf")
@@ -125,7 +108,9 @@ def _seed_questions(get_session, session_id: str, n: int) -> list[str]:
     ids = []
     with get_session() as db:
         for i in range(n):
-            q = Question(session_id=session_id, chunk_ids="[]", question_text=f"Q{i + 1}?", answer_key="A", bloom_level="C2-Memahami")
+            # Distinct timestamps fix the session numbering, as save_questions does
+            q = Question(session_id=session_id, chunk_ids="[]", question_text=f"Q{i + 1}?", answer_key="A",
+                         bloom_level="C2-Memahami", created_at=datetime(2024, 1, 1, 0, 0, i))
             db.add(q)
             db.flush()
             ids.append(str(q.id))

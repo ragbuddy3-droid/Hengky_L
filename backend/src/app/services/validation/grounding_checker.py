@@ -1,5 +1,6 @@
 """Layer 1 non-LLM grounding check: cosine similarity against the blueprint's grounding evidence."""
 
+from functools import cache
 from typing import Any
 
 import numpy as np
@@ -7,15 +8,11 @@ import numpy as np
 from app.services.retrieval.dense_index import DenseIndex
 from app.services.validation.embedding_cache import EmbeddingCache
 
-_emb_cache: EmbeddingCache | None = None
 
-
+@cache
 def _get_embedding_cache(model: Any) -> EmbeddingCache:
-    """Get or create singleton embedding cache."""
-    global _emb_cache
-    if _emb_cache is None or _emb_cache._model is not model:
-        _emb_cache = EmbeddingCache(model, max_entries=500)
-    return _emb_cache
+    """One embedding cache per embedder."""
+    return EmbeddingCache(model, max_entries=500)
 
 
 def compute_grounding_evidence_score(

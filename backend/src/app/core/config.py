@@ -1,8 +1,9 @@
-"""Configuration management for RAG-AQG with YAML settings and .env secrets."""
+"""Configuration: configs/settings.yaml for settings, .env for secrets. Relative paths resolve against backend/."""
 
 import logging
 import os
-from functools import lru_cache
+from functools import cache
+from pathlib import Path
 from typing import Any
 
 import dotenv
@@ -11,39 +12,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
-
-def load_environment_variables() -> None:
-    """Load environment variables from .env file."""
-    candidates = [
-        ".env",
-        "backend/.env",
-        os.path.join(os.path.dirname(__file__), "../../../.env"),
-        os.path.join(os.path.dirname(__file__), "../../.env"),
-    ]
-    for c in candidates:
-        if os.path.exists(c):
-            dotenv.load_dotenv(dotenv_path=os.path.abspath(c), override=False)
-            logger.info("Loaded .env from: %s", os.path.abspath(c))
-            break
-    else:
-        dotenv.load_dotenv()
+BACKEND_DIR = Path(__file__).resolve().parents[3]
+ENV_FILE = BACKEND_DIR / ".env"
+YAML_FILE = BACKEND_DIR / "configs" / "settings.yaml"
 
 
-def find_yaml_config() -> str:
-    """Find settings.yaml location dynamically."""
-    candidates = [
-        "configs/settings.yaml",
-        "backend/configs/settings.yaml",
-        os.path.join(os.path.dirname(__file__), "../../../configs/settings.yaml"),
-        os.path.join(os.path.dirname(__file__), "../../configs/settings.yaml"),
-    ]
-    for c in candidates:
-        if os.path.exists(c):
-            return os.path.abspath(c)
-    raise FileNotFoundError(
-        "Configuration file 'configs/settings.yaml' not found. "
-        "All application settings must be defined in configs/settings.yaml."
-    )
+def _resolve(path: str | Path) -> Path:
+    """A relative path is taken from backend/, so the app behaves the same whatever the working directory."""
+    p = Path(path)
+    return p if p.is_absolute() else (BACKEND_DIR / p).resolve()
 
 
 class AppConfig(BaseModel):
@@ -52,7 +29,8 @@ class AppConfig(BaseModel):
 
 class LLMConfig(BaseModel):
     provider: str = "deepinfra"
-    deepinfra_api_key: str | None = None
+    # validate_default so the .env fallback below runs when the YAML omits the key
+    deepinfra_api_key: str | None = Field(default=None, validate_default=True)
     deepinfra_base_url: str = "https://api.deepinfra.com/v1/openai"
     generator_model: str = "Qwen/Qwen3-32B"
     judge_model: str = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
@@ -76,6 +54,23 @@ class DatabaseConfig(BaseModel):
     url: str = "sqlite:///./data/rag_aqg.db"
     chroma_persist_dir: str = "./data/chroma"
 
+    @field_validator("url")
+    @classmethod
+    def resolve_sqlite_path(cls, v: str) -> str:
+        prefix = "sqlite:///"
+        if v.startswith(prefix) and v != prefix and not v.startswith(prefix + ":memory:"):
+            return prefix + _resolve(v[len(prefix):]).as_posix()
+        return v
+
+    @field_validator("chroma_persist_dir")
+    @classmethod
+    def resolve_chroma_dir(cls, v: str) -> str:
+        return str(_resolve(v))
+
+    @property
+    def is_sqlite(self) -> bool:
+        return self.url.startswith("sqlite")
+
 
 class RetrievalConfig(BaseModel):
     candidate_top_k: int = 15
@@ -92,7 +87,7 @@ class GenerationConfig(BaseModel):
 
 
 class AuthConfig(BaseModel):
-    jwt_secret: str | None = None  # from .env JWT_SECRET; falls back to a generated secret in data/
+    jwt_secret: str | None = Field(default=None, validate_default=True)  # from .env JWT_SECRET; falls back to a generated secret in data/
     session_days: int = 7  # login lifetime without "Ingat saya"
     remember_days: int = 30  # login lifetime with "Ingat saya"
     guest_ttl_hours: int = 24  # inactive guest data is purged after this
@@ -111,8 +106,30 @@ class ChunkingConfig(BaseModel):
     fixed_chunk_overlap: int = 150
 
 
+class PathsConfig(BaseModel):
+    data_dir: Path = Field(default=Path("data"), validate_default=True)
+
+    @field_validator("data_dir")
+    @classmethod
+    def resolve_data_dir(cls, v: Path) -> Path:
+        return _resolve(v)
+
+    @property
+    def raw_dir(self) -> Path:
+        """Uploaded PDFs."""
+        return self.data_dir / "raw"
+
+    @property
+    def logs_dir(self) -> Path:
+        return self.data_dir / "logs"
+
+    @property
+    def jwt_secret_file(self) -> Path:
+        return self.data_dir / ".jwt_secret"
+
+
 class Settings(BaseModel):
-    """Application settings loaded strictly from central YAML configuration."""
+    """Application settings loaded from the central YAML configuration."""
 
     app: AppConfig = Field(default_factory=AppConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
@@ -122,114 +139,25 @@ class Settings(BaseModel):
     chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
+    paths: PathsConfig = Field(default_factory=PathsConfig)
 
     model_config = ConfigDict(extra="ignore")
 
-    @property
-    def CORS_ORIGINS(self) -> list[str]:
-        return self.app.cors_origins
-
-    @property
-    def LLM_PROVIDER(self) -> str:
-        return self.llm.provider
-
-    @property
-    def DEEPINFRA_API_KEY(self) -> str | None:
-        return self.llm.deepinfra_api_key
-
-    @property
-    def DEEPINFRA_BASE_URL(self) -> str:
-        return self.llm.deepinfra_base_url
-
-    @property
-    def LLM_GENERATOR_MODEL(self) -> str:
-        return self.llm.generator_model
-
-    @property
-    def LLM_JUDGE_MODEL(self) -> str:
-        return self.llm.judge_model
-
-    @property
-    def EMBEDDING_MODEL(self) -> str:
-        return self.llm.embedding_model
-
-    @property
-    def MAX_TOKENS(self) -> int:
-        return self.llm.max_tokens
-
-    @property
-    def LLM_REQUEST_TIMEOUT(self) -> int:
-        return self.llm.request_timeout
-
-    @property
-    def LLM_MAX_RETRIES(self) -> int:
-        return self.llm.max_retries
-
-    @property
-    def FAST_REJECT_THRESHOLD(self) -> float:
-        return self.validation.fast_reject_threshold
-
-    @property
-    def MAX_REFINEMENT_ATTEMPTS(self) -> int:
-        return self.validation.max_refinement_attempts
-
-    @property
-    def DATABASE_URL(self) -> str:
-        return self.database.url
-
-    @property
-    def CHROMA_PERSIST_DIR(self) -> str:
-        return self.database.chroma_persist_dir
-
-    @property
-    def CANDIDATE_TOP_K(self) -> int:
-        return self.retrieval.candidate_top_k
-
-    @property
-    def MAX_QUESTIONS_PER_CHUNK(self) -> int:
-        return self.retrieval.max_questions_per_chunk
-
-    @property
-    def MIN_RELATIVE_SCORE(self) -> float:
-        return self.retrieval.min_relative_score
-
-    @property
-    def RESERVE_CHUNKS(self) -> int:
-        return self.retrieval.reserve_chunks
-
-    @property
-    def HYBRID_DENSE_WEIGHT(self) -> float:
-        return self.retrieval.hybrid_dense_weight
-
-    @property
-    def HYBRID_SPARSE_WEIGHT(self) -> float:
-        return self.retrieval.hybrid_sparse_weight
-
-    @property
-    def GENERATION_CONCURRENCY(self) -> int:
-        return self.generation.concurrency
-
-    @property
-    def MAX_CONTEXT_CHUNKS(self) -> int:
-        return self.generation.max_context_chunks
-
     @classmethod
-    def load_from_yaml(cls, yaml_path: str | None = None) -> "Settings":
-        """Load and parse settings from YAML and environment (.env)."""
-        load_environment_variables()
-        path = yaml_path or find_yaml_config()
-        with open(path, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-
+    def load(cls, yaml_path: Path = YAML_FILE) -> "Settings":
+        """Load .env into the environment (existing variables win), then parse the YAML."""
+        dotenv.load_dotenv(ENV_FILE, override=False)
+        if not yaml_path.exists():
+            raise FileNotFoundError(f"Configuration file not found: {yaml_path}")
+        data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
         if not data or not isinstance(data, dict):
-            raise ValueError(f"YAML config file at {path} is empty or invalid.")
+            raise ValueError(f"YAML config file at {yaml_path} is empty or invalid.")
 
         settings = cls.model_validate(data)
-        logger.info("Successfully loaded configuration from YAML: %s (Provider: %s)", path, settings.llm.provider)
+        logger.info("Loaded configuration from %s (provider: %s)", yaml_path, settings.llm.provider)
         return settings
 
 
-@lru_cache
+@cache
 def get_settings() -> Settings:
-    """Get cached settings instance strictly derived from central YAML configuration."""
-    return Settings.load_from_yaml()
+    return Settings.load()

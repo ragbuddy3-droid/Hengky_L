@@ -83,10 +83,7 @@ def extract_chapter_and_heading(
             title = (chap_match.group(2) or "").strip(" :.-–—|")
             # Strip trailing page numbers if any
             title = re.sub(r'\s+\d+$', '', title).strip()
-            if title and len(title) > 2:
-                chapter = f"Bab {norm_num}: {title}"
-            else:
-                chapter = f"Bab {norm_num}"
+            chapter = f"Bab {norm_num}: {title}" if title and len(title) > 2 else f"Bab {norm_num}"
             continue
 
         # Check for Section Heading (e.g. "Topik A: Cara Kerja Sistem Pencernaan", "A. Organ Pernapasan")
@@ -94,10 +91,10 @@ def extract_chapter_and_heading(
         if sec_match:
             h_candidate = line.strip(" :.-–—|")
             # Exclude exercise imperative prompts
-            if not any(kw in h_candidate.lower() for kw in ["jawablah", "bacalah", "buatlah", "amati", "salinlah", "diskusikan", "gambar", "tabel", "sumber"]):
-                if len(h_candidate) <= 60:
-                    heading = h_candidate
-                    continue
+            is_prompt = any(kw in h_candidate.lower() for kw in ["jawablah", "bacalah", "buatlah", "amati", "salinlah", "diskusikan", "gambar", "tabel", "sumber"])
+            if not is_prompt and len(h_candidate) <= 60:
+                heading = h_candidate
+                continue
 
         # Generic title line heuristic for standalone title headers (short, title-cased, no sentence punctuation)
         if (

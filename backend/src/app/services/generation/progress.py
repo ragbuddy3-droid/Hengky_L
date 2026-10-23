@@ -104,8 +104,8 @@ def is_active(session_id: str) -> bool:
     return session_id in _runs
 
 
-async def subscribe(session_id: str) -> AsyncIterator[dict[str, Any] | None]:
-    """Yield the run's history, then live events until "done". Yields None after 15 s of silence (heartbeat)."""
+async def subscribe(session_id: str) -> AsyncIterator[dict[str, Any]]:
+    """Yield the run's history, then live events until "done"."""
     run = _runs.get(session_id)
     if run is None:
         return
@@ -120,11 +120,7 @@ async def subscribe(session_id: str) -> AsyncIterator[dict[str, Any] | None]:
         if run.done:
             return
         while True:
-            try:
-                event = await asyncio.wait_for(queue.get(), timeout=15)
-            except TimeoutError:
-                yield None
-                continue
+            event = await queue.get()
             yield event
             if event["type"] == "done":
                 return

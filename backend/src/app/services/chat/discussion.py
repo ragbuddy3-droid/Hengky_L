@@ -1,6 +1,5 @@
 """Answer questions about one generated question, grounded in the question package and its source chunk."""
 
-import json
 import logging
 from collections.abc import Sequence
 
@@ -18,14 +17,11 @@ _STATUS_LABELS = {"final": "Lolos validasi", "needs_review": "Perlu tinjauan gur
 
 def question_chunk_text(db: Session, question: Question) -> str:
     """Text of the chunk the question was generated from (its first stored chunk id)."""
-    try:
-        chunk_ids = json.loads(str(question.chunk_ids or "[]"))
-    except json.JSONDecodeError:
-        chunk_ids = []
+    chunk_ids = question.chunk_id_list
     if not chunk_ids:
         return ""
     chunk = db.get(Chunk, chunk_ids[0])
-    return str(chunk.text) if chunk else ""
+    return chunk.text if chunk else ""
 
 
 def _validation_note(db: Session, question: Question) -> str:
@@ -54,7 +50,7 @@ def answer_about_question(
         knowledge_point=question.knowledge_point or "-",
         grounding_evidence=question.grounding_evidence or "-",
         source_reference=question.source_reference or "-",
-        status=_STATUS_LABELS.get(str(question.status), str(question.status)),
+        status=_STATUS_LABELS.get(question.status, question.status),
         validation_note=_validation_note(db, question),
         context=question_chunk_text(db, question)[:JUDGE_CONTEXT_CHARS] or "(materi sumber tidak tersedia)",
         history=format_history(history),

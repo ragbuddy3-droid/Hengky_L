@@ -44,14 +44,14 @@ def test_deepinfra_chat_model_initialization():
     assert gen_model.model_name == "Qwen/Qwen3-Next-80B-A3B-Instruct"
     assert "deepinfra.com" in str(gen_model.openai_api_base)
     assert gen_model.model_kwargs.get("response_format") == {"type": "json_object"}
-    assert gen_model.max_tokens == settings.MAX_TOKENS
-    assert gen_model.request_timeout == settings.LLM_REQUEST_TIMEOUT
+    assert gen_model.max_tokens == settings.llm.max_tokens
+    assert gen_model.request_timeout == settings.llm.request_timeout
 
     judge_model = get_chat_model(is_judge=True)
     assert judge_model.model_name == "meta-llama/Llama-3.3-70B-Instruct-Turbo"
     assert "deepinfra.com" in str(judge_model.openai_api_base)
     assert judge_model.model_kwargs.get("response_format") == {"type": "json_object"}
-    assert judge_model.max_tokens == settings.MAX_TOKENS
+    assert judge_model.max_tokens == settings.llm.max_tokens
 
 
 def test_fixed_chunker():

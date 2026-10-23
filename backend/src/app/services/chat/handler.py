@@ -51,7 +51,7 @@ def _start_background(db: Session, session_id: str, manager: ChatStateManager, t
 
 
 def _generate(db: Session, session: ChatSession, owner: Owner, manager: ChatStateManager, intent: ChatIntent, content: str) -> ChatReply:
-    if str(session.generation_status) == "running":
+    if session.generation_status == "running":
         return ChatReply(manager.add_message("assistant", GENERATION_RUNNING_REPLY))
     if not can_use(db, owner, "generate"):
         return ChatReply(manager.add_message("assistant", GUEST_LIMIT_MESSAGES["generate"]))
@@ -59,12 +59,12 @@ def _generate(db: Session, session: ChatSession, owner: Owner, manager: ChatStat
     if not params.bloom_level and intent.bloom_level:
         params.bloom_level = intent.bloom_level
     bot_msg = _start_background(
-        db, str(session.id), manager,
+        db, session.id, manager,
         f"Sedang membuat {params.num_questions} soal ({params.bloom_level or 'Beragam Level'}). Mohon tunggu sebentar...",
         params.num_questions,
     )
     consume(db, owner, "generate")
-    return ChatReply(bot_msg, ("generate", (str(session.id), content, params)))
+    return ChatReply(bot_msg, ("generate", (session.id, content, params)))
 
 
 def _missing_number_reply(intent: ChatIntent, count: int) -> str | None:
@@ -80,9 +80,9 @@ def _missing_number_reply(intent: ChatIntent, count: int) -> str | None:
 def _change_question(
     db: Session, session: ChatSession, manager: ChatStateManager, intent: ChatIntent, number: int, question: Question,
 ) -> ChatReply:
-    if str(session.generation_status) == "running":
+    if session.generation_status == "running":
         return ChatReply(manager.add_message("assistant", GENERATION_RUNNING_REPLY))
-    if int(question.revision_count or 0) >= MAX_REVISIONS_PER_QUESTION:  # type: ignore[arg-type]
+    if (question.revision_count or 0) >= MAX_REVISIONS_PER_QUESTION:
         return ChatReply(manager.add_message(
             "assistant",
             f"Soal #{number} sudah diperbarui {MAX_REVISIONS_PER_QUESTION} kali, batas maksimum per soal. "
@@ -91,13 +91,13 @@ def _change_question(
     level = intent.bloom_level if intent.intent == "regenerate" else None
     verb = "Membuat ulang" if intent.intent == "regenerate" else "Merevisi"
     target = f" menjadi {level}" if level else ""
-    bot_msg = _start_background(db, str(session.id), manager, f"{verb} Soal #{number}{target}. Mohon tunggu sebentar...", 1)
-    return ChatReply(bot_msg, ("revise", (str(session.id), str(question.id), intent.intent, level, intent.instruction)))
+    bot_msg = _start_background(db, session.id, manager, f"{verb} Soal #{number}{target}. Mohon tunggu sebentar...", 1)
+    return ChatReply(bot_msg, ("revise", (session.id, question.id, intent.intent, level, intent.instruction)))
 
 
 def handle_message(db: Session, session: ChatSession, owner: Owner, content: str) -> ChatReply:
     """Store the user's message, route it, and return the assistant's reply (plus a background job, if any)."""
-    manager = ChatStateManager(str(session.id), db)
+    manager = ChatStateManager(session.id, db)
     history = manager.recent_history()
     manager.add_message("user", content)
     db.commit()

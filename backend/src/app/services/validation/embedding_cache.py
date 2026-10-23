@@ -43,7 +43,7 @@ class EmbeddingCache:
 
         if to_encode:
             new_embeddings = self._model.encode(to_encode, normalize_embeddings=True)
-            for idx, emb in zip(to_encode_indices, new_embeddings):
+            for idx, emb in zip(to_encode_indices, new_embeddings, strict=False):
                 key = hashlib.md5(texts[idx].strip().encode("utf-8")).hexdigest()
                 self._cache[key] = emb
                 results.append((idx, emb))

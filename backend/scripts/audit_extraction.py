@@ -14,10 +14,7 @@ import re
 import sys
 from pathlib import Path
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(BACKEND_DIR / "src"))
-
-from app.services.ingestion.extractor import (  # noqa: E402
+from app.services.ingestion.extractor import (
     MAX_TITLE_CHARS,
     NAVIGATION_REGEX,
     URL_REGEX,

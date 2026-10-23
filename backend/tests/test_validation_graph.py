@@ -5,9 +5,8 @@ import random
 from collections import Counter
 from typing import Any
 
-import app.graph.nodes as nodes
-import app.graph.workflow as workflow
 from app.services.generation import planner
+from app.services.generation.graph import validation, workflow
 from app.services.generation.schemas import (
     ContentAnalysis,
     JudgeAspectResult,
@@ -63,22 +62,21 @@ def _candidate(text: str, idx: int) -> dict[str, Any]:
 
 
 def _build_test_graph(monkeypatch, candidates: list[dict[str, Any]]):
-    monkeypatch.setattr(nodes, "run_llm_judge", _fake_judge)
-    monkeypatch.setattr(nodes, "run_refinement_a", _fake_refinement_a)
-    monkeypatch.setattr(nodes, "get_chat_model", lambda **_: None)
-    monkeypatch.setattr(nodes, "get_shared_dense_index", lambda: None)
+    monkeypatch.setattr(validation, "run_llm_judge", _fake_judge)
+    monkeypatch.setattr(validation, "run_refinement_a", _fake_refinement_a)
+    monkeypatch.setattr(validation, "get_chat_model", lambda **_: None)
+    monkeypatch.setattr(validation, "get_shared_dense_index", lambda: None)
     monkeypatch.setattr(
-        nodes, "compute_grounding_evidence_score",
+        validation, "compute_grounding_evidence_score",
         lambda **_: {"score": 0.9, "target": "evidence"},
     )
     monkeypatch.setattr(workflow, "retrieve_context", lambda state: {"retrieved_chunks": [{"id": "x"}]})
     async def fake_generate(state):
         # Stands in for the pipeline: each candidate runs its own validation subgraph (3 attempts as before)
-        inputs = [
-            {**nodes.validation_input(q, state["session_id"], None, f"r1-{i}"), "max_attempts": 3}
-            for i, q in enumerate(candidates)
-        ]
-        return {"validated_questions": list(await asyncio.gather(*[nodes.validate_candidate(s) for s in inputs]))}
+        inputs = [validation.validation_input(q, state["session_id"], None, f"r1-{i}") for i, q in enumerate(candidates)]
+        for s in inputs:
+            s["max_attempts"] = 3
+        return {"validated_questions": list(await asyncio.gather(*[validation.validate_candidate(s) for s in inputs]))}
 
     monkeypatch.setattr(workflow, "generate_questions", fake_generate)
     monkeypatch.setattr(workflow, "top_up_questions", lambda state: {"top_up_done": True})
@@ -86,7 +84,6 @@ def _build_test_graph(monkeypatch, candidates: list[dict[str, Any]]):
         workflow, "persist_questions",
         lambda state: {"finalized_questions": state["validated_questions"]},
     )
-    monkeypatch.setattr(workflow, "_validation_graph", None)
     return workflow.build_aqg_graph()
 
 
@@ -131,7 +128,7 @@ def test_failed_aspect_overrides_overall_pass(monkeypatch):
         return result, _trace("Layer 2: LLM-as-Judge", kwargs["attempt"])
 
     graph = _build_test_graph(monkeypatch, [_candidate("Mengapa Venus panas?", 0)])
-    monkeypatch.setattr(nodes, "run_llm_judge", inconsistent_judge)
+    monkeypatch.setattr(validation, "run_llm_judge", inconsistent_judge)
     q = _run(graph)["finalized_questions"][0]
 
     assert q["status"] == "needs_review"

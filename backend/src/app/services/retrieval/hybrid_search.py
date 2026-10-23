@@ -62,19 +62,14 @@ def is_exercise_or_instruction_chunk(chunk_text: str) -> bool:
 
     if any(phrase in text_lower for phrase in pure_exercise_phrases):
         # Allow long explanatory concept paragraphs (> 60 words) that merely mention discussion
-        if len(text_lower.split()) > 60 and ("adalah" in text_lower or "merupakan" in text_lower or "proses" in text_lower):
-            return False
-        return True
+        return not (len(text_lower.split()) > 60 and ("adalah" in text_lower or "merupakan" in text_lower or "proses" in text_lower))
 
     # Detect numbered test items (e.g. 1. ... 2. ...) with question marks or imperatives
     sub_questions = re.findall(
         r'(?:^|\s)(?:\d+|[a-e])[\.\)]\s*(?:tuliskan|jelaskan|sebutkan|buatlah|isilah|apa|mengapa|bagaimana)',
         text_lower
     )
-    if len(sub_questions) >= 2 and text_lower.count('?') >= 1:
-        return True
-
-    return False
+    return bool(len(sub_questions) >= 2 and text_lower.count('?') >= 1)
 
 
 def reciprocal_rank_fusion(
@@ -84,33 +79,15 @@ def reciprocal_rank_fusion(
     dense_weight: float = 1.0,
     sparse_weight: float = 1.0,
 ) -> list[dict[str, Any]]:
-    """Implement weighted Reciprocal Rank Fusion algorithm across ranked lists."""
+    """Weighted Reciprocal Rank Fusion: score = sum of weight / (k + rank) over the lists an item appears in."""
     scores: dict[str, float] = {}
     items: dict[str, dict[str, Any]] = {}
-
-    for rank, item in enumerate(dense_results):
-        item_id = item["id"]
-        if item_id not in scores:
-            scores[item_id] = 0.0
-            items[item_id] = item
-        scores[item_id] += dense_weight * (1.0 / (k + rank + 1))
-
-    for rank, item in enumerate(sparse_results):
-        item_id = item["id"]
-        if item_id not in scores:
-            scores[item_id] = 0.0
-            items[item_id] = item
-        scores[item_id] += sparse_weight * (1.0 / (k + rank + 1))
-
-    sorted_items = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-
-    results: list[dict[str, Any]] = []
-    for item_id, score in sorted_items:
-        res = items[item_id].copy()
-        res["rrf_score"] = score
-        results.append(res)
-
-    return results
+    for results, weight in ((dense_results, dense_weight), (sparse_results, sparse_weight)):
+        for rank, item in enumerate(results, 1):
+            items.setdefault(item["id"], item)  # the dense hit wins when both lists have it
+            scores[item["id"]] = scores.get(item["id"], 0.0) + weight / (k + rank)
+    ranked = sorted(scores, key=lambda item_id: scores[item_id], reverse=True)
+    return [{**items[item_id], "rrf_score": scores[item_id]} for item_id in ranked]
 
 
 class HybridSearch:

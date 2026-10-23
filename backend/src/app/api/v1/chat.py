@@ -1,16 +1,15 @@
 """Chat API router v1: sessions, messages, and starting background question generation."""
 
 import asyncio
-import json
 from collections.abc import AsyncIterator
+from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.sse import EventSourceResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.deps import get_owner
-from app.core.database import get_session
+from app.api.deps import DbDep, OwnerDep
 from app.models.db_models import ChatMessage, ChatSession, Document, utcnow
 from app.schemas.api_schemas import (
     ChatMessageCreate,
@@ -30,6 +29,13 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 _STREAM_START_WAIT_TICKS = 40  # x 0.25 s
 _NOT_FOUND = "Sesi chat tidak ditemukan"
+
+
+def _owned_session(db: Session, session_id: str, owner: Owner) -> ChatSession:
+    session = get_chat_session(db, session_id, owner)
+    if not session:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    return session
 
 
 def _last_messages(db: Session, session_ids: list[str]) -> dict[str, str]:
@@ -64,115 +70,92 @@ def _session_item(s: ChatSession, last_msg: str | None) -> ChatSessionListItem:
 
 
 @router.get("/sessions", response_model=list[ChatSessionListItem])
-def list_sessions(document_id: str | None = None, owner: Owner = Depends(get_owner)):
+def list_sessions(owner: OwnerDep, db: DbDep, document_id: str | None = None):
     """List the requester's chat sessions, optionally filtered by document_id."""
-    with get_session() as db:
-        query = db.query(ChatSession).options(selectinload(ChatSession.document)).filter(owner.clause(ChatSession))
-        if document_id:
-            query = query.filter(ChatSession.document_id == document_id)
-        sessions = query.order_by(ChatSession.created_at.desc()).all()
-        last = _last_messages(db, [str(s.id) for s in sessions])
-        return [_session_item(s, last.get(str(s.id))) for s in sessions]
+    query = db.query(ChatSession).options(selectinload(ChatSession.document)).filter(owner.clause(ChatSession))
+    if document_id:
+        query = query.filter(ChatSession.document_id == document_id)
+    sessions = query.order_by(ChatSession.created_at.desc()).all()
+    last = _last_messages(db, [s.id for s in sessions])
+    return [_session_item(s, last.get(s.id)) for s in sessions]
 
 
 @router.get("/sessions/{session_id}", response_model=ChatSessionListItem)
-def get_session_detail(session_id: str, owner: Owner = Depends(get_owner)):
+def get_session_detail(session_id: str, owner: OwnerDep, db: DbDep):
     """Get one chat session, including its question generation status (for polling)."""
-    with get_session() as db:
-        session = get_chat_session(db, session_id, owner)
-        if not session:
-            raise HTTPException(status_code=404, detail=_NOT_FOUND)
-        return _session_item(session, _last_messages(db, [session_id]).get(session_id))
+    session = _owned_session(db, session_id, owner)
+    return _session_item(session, _last_messages(db, [session_id]).get(session_id))
 
 
-@router.get("/sessions/{session_id}/generation/stream")
-async def stream_generation(session_id: str, owner: Owner = Depends(get_owner)):
-    """Server-Sent Events of the running generation: history first, then live events until "done"."""
-    with get_session() as db:
-        session = get_chat_session(db, session_id, owner)
-        if not session:
-            raise HTTPException(status_code=404, detail=_NOT_FOUND)
-        status = str(session.generation_status or "idle")
+def _generation_status(session_id: str, owner: OwnerDep, db: DbDep) -> str:
+    """Checked as a dependency so a 404 is sent before the event stream starts."""
+    return _owned_session(db, session_id, owner).generation_status or "idle"
 
-    def sse(event: dict) -> str:
-        return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
-    async def events() -> AsyncIterator[str]:
-        # The background task registers its run right after the request that set 'running' returns
-        for _ in range(_STREAM_START_WAIT_TICKS):
-            if progress.is_active(session_id) or status != "running":
-                break
-            await asyncio.sleep(0.25)
-        if not progress.is_active(session_id):
-            # Nothing in memory (finished long ago, or the server restarted): report the stored status
-            yield sse({"type": "done", "status": "failed" if status == "running" else status})
-            return
-        async for event in progress.subscribe(session_id):
-            yield ": ping\n\n" if event is None else sse(event)
+@router.get("/sessions/{session_id}/generation/stream", response_class=EventSourceResponse)
+async def stream_generation(
+    session_id: str, status: Annotated[str, Depends(_generation_status)],
+) -> AsyncIterator[dict[str, Any]]:
+    """Server-Sent Events of the running generation: history first, then live events until "done".
 
-    return StreamingResponse(
-        events(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    FastAPI adds the keep-alive pings and the no-cache / no-buffering headers.
+    """
+    # The background task registers its run right after the request that set 'running' returns
+    for _ in range(_STREAM_START_WAIT_TICKS):
+        if progress.is_active(session_id) or status != "running":
+            break
+        await asyncio.sleep(0.25)
+    if not progress.is_active(session_id):
+        # Nothing in memory (finished long ago, or the server restarted): report the stored status
+        yield {"type": "done", "status": "failed" if status == "running" else status}
+        return
+    async for event in progress.subscribe(session_id):
+        yield event
 
 
 @router.post("/sessions", response_model=ChatSessionResponse)
-def create_new_session(data: ChatSessionCreate, owner: Owner = Depends(get_owner)):
+def create_new_session(data: ChatSessionCreate, owner: OwnerDep, db: DbDep):
     """Create new chat session for one of the requester's documents."""
-    with get_session() as db:
-        if not db.query(Document.id).filter(Document.id == data.document_id, owner.clause(Document)).first():
-            raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan")
-        if not can_use(db, owner, "session"):
-            raise HTTPException(status_code=403, detail=GUEST_LIMIT_MESSAGES["session"])
-        session = create_session(db, data.document_id, owner)
-        consume(db, owner, "session")
-        db.commit()
-        return ChatSessionResponse.model_validate({"id": session.id, "document_id": session.document_id})
+    if not db.query(Document.id).filter(Document.id == data.document_id, owner.clause(Document)).first():
+        raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan")
+    if not can_use(db, owner, "session"):
+        raise HTTPException(status_code=403, detail=GUEST_LIMIT_MESSAGES["session"])
+    session = create_session(db, data.document_id, owner)
+    consume(db, owner, "session")
+    db.commit()
+    return ChatSessionResponse.model_validate({"id": session.id, "document_id": session.document_id})
 
 
 @router.delete("/sessions/{session_id}")
-def delete_session(session_id: str, owner: Owner = Depends(get_owner)):
+def delete_session(session_id: str, owner: OwnerDep, db: DbDep):
     """Delete a chat session."""
-    with get_session() as db:
-        success = delete_chat_session(db, session_id, owner)
-        if not success:
-            raise HTTPException(status_code=404, detail=_NOT_FOUND)
-        db.commit()
-        return {"status": "deleted", "session_id": session_id}
+    if not delete_chat_session(db, session_id, owner):
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    db.commit()
+    return {"status": "deleted", "session_id": session_id}
 
 
 @router.get("/sessions/{session_id}/messages", response_model=list[ChatMessageResponse])
-def get_messages(session_id: str, owner: Owner = Depends(get_owner)):
+def get_messages(session_id: str, owner: OwnerDep, db: DbDep):
     """Get all messages in session."""
-    with get_session() as db:
-        if not get_chat_session(db, session_id, owner):
-            raise HTTPException(status_code=404, detail=_NOT_FOUND)
-        messages = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at).all()
-        return [ChatMessageResponse.model_validate(m) for m in messages]
+    _owned_session(db, session_id, owner)
+    messages = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at).all()
+    return [ChatMessageResponse.model_validate(m) for m in messages]
 
 
 @router.post("/sessions/{session_id}/messages", response_model=ChatMessageResponse)
-def send_message(
-    session_id: str,
-    data: ChatMessageCreate,
-    background_tasks: BackgroundTasks,
-    owner: Owner = Depends(get_owner),
-):
+def send_message(session_id: str, data: ChatMessageCreate, background_tasks: BackgroundTasks, owner: OwnerDep, db: DbDep):
     """Send a message to the chat session."""
-    with get_session() as db:
-        session = get_chat_session(db, session_id, owner)
-        if not session:
-            raise HTTPException(status_code=404, detail=_NOT_FOUND)
-        session.last_active_at = utcnow()  # type: ignore[assignment]
+    session = _owned_session(db, session_id, owner)
+    session.last_active_at = utcnow()
 
-        reply = handle_message(db, session, owner, data.content)
-        db.commit()
-        if reply.job:
-            kind, args = reply.job
-            progress.discard(session_id)
-            if kind == "generate":
-                background_tasks.add_task(background_generate_questions, *args)
-            else:
-                background_tasks.add_task(background_revise_question, *args)
-        return ChatMessageResponse.model_validate(reply.message)
+    reply = handle_message(db, session, owner, data.content)
+    db.commit()
+    if reply.job:
+        kind, args = reply.job
+        progress.discard(session_id)
+        if kind == "generate":
+            background_tasks.add_task(background_generate_questions, *args)
+        else:
+            background_tasks.add_task(background_revise_question, *args)
+    return ChatMessageResponse.model_validate(reply.message)

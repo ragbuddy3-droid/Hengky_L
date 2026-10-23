@@ -2,7 +2,6 @@
 
 import logging
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -10,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_session
 from app.models.db_models import ChatSession, Document, User
-from app.services.ingestion.pipeline import delete_document_vectors
+from app.services.documents import delete_documents, remove_document_files
 
 logger = logging.getLogger(__name__)
 
@@ -52,28 +51,9 @@ def is_first_user(db: Session) -> bool:
     return db.query(User.id).first() is None
 
 
-def _delete_documents(db: Session, docs: list[Document]) -> list[tuple[str, str | None]]:
-    """Hapus dokumen dari DB; kembalikan (id, filepath) untuk dibersihkan setelah commit."""
-    removed = [(str(d.id), str(d.filepath) if d.filepath is not None else None) for d in docs]
-    for d in docs:
-        db.delete(d)
-    return removed
-
-
-def remove_document_files(removed: list[tuple[str, str | None]]) -> None:
-    """Hapus vektor dan file PDF mentah milik dokumen yang sudah dihapus dari DB."""
-    for doc_id, filepath in removed:
-        delete_document_vectors(doc_id)
-        if filepath:
-            try:
-                Path(filepath).unlink(missing_ok=True)
-            except OSError as e:
-                logger.warning("Failed to remove raw file '%s': %s", filepath, e)
-
-
 def delete_user_account(db: Session, user: User) -> None:
     """Hapus akun beserta semua dokumen, chat, dan soalnya."""
-    removed = _delete_documents(db, db.query(Document).filter(Document.user_id == user.id).all())
+    removed = delete_documents(db, db.query(Document).filter(Document.user_id == user.id).all())
     db.flush()
     # Sesi milik akun ini yang tidak ikut terhapus lewat dokumennya
     for s in db.query(ChatSession).filter(ChatSession.user_id == user.id).all():
@@ -110,7 +90,7 @@ def purge_stale_guest_data(now: datetime | None = None) -> int:
         if not stale:
             return 0
 
-        removed = _delete_documents(
+        removed = delete_documents(
             db, db.query(Document).filter(Document.user_id.is_(None), Document.guest_id.in_(stale)).all()
         )
         db.flush()

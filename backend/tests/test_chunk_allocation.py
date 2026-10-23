@@ -1,17 +1,11 @@
 """Tests for capacity-based chunk selection, per-chunk allocation, focus-only context, and the Stage 1 cache."""
 
 import asyncio
-from contextlib import contextmanager
 from typing import Any
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-
-import app.graph.nodes as nodes
-from app.core.database import Base
 from app.models.db_models import Chunk, Document
-from app.services.generation import analysis_cache, planner
+from app.services.generation import analysis_cache, pipeline, planner
+from app.services.generation.graph import session_nodes
 from app.services.generation.schemas import (
     CognitivePlan,
     ContentAnalysis,
@@ -173,15 +167,15 @@ def _patch_stages(monkeypatch, points_by_text: dict[str, tuple[str, ...]], statu
         pkg = QuestionPackage(question=f"Jelaskan {blueprint.knowledge_point} ({level})?", expected_answer="A")
         return pkg, _trace("Stage 4")
 
-    monkeypatch.setattr(nodes, "run_stage1_context_understanding", fake_stage1)
-    monkeypatch.setattr(nodes, "run_stage2_cognitive_planning", fake_stage2)
-    monkeypatch.setattr(nodes, "run_stage3_blueprint_batch", fake_stage3_batch)
-    monkeypatch.setattr(nodes, "run_stage4_question_generation", fake_stage4)
-    monkeypatch.setattr(nodes, "validate_candidate", fake_validate)
-    monkeypatch.setattr(nodes, "get_chat_model", lambda **_: None)
-    monkeypatch.setattr(nodes, "load_few_shots", lambda _doc, levels: dict.fromkeys(levels, planner.NO_FEW_SHOT))
-    monkeypatch.setattr(nodes, "load_cached_analyses", lambda _ids: {})
-    monkeypatch.setattr(nodes, "store_analyses", lambda _entries: None)
+    monkeypatch.setattr(pipeline, "run_stage1_context_understanding", fake_stage1)
+    monkeypatch.setattr(pipeline, "run_stage2_cognitive_planning", fake_stage2)
+    monkeypatch.setattr(pipeline, "run_stage3_blueprint_batch", fake_stage3_batch)
+    monkeypatch.setattr(pipeline, "run_stage4_question_generation", fake_stage4)
+    monkeypatch.setattr(pipeline, "validate_candidate", fake_validate)
+    monkeypatch.setattr(pipeline, "get_chat_model", lambda **_: None)
+    monkeypatch.setattr(pipeline, "load_few_shots", lambda _doc, levels: dict.fromkeys(levels, planner.NO_FEW_SHOT))
+    monkeypatch.setattr(pipeline, "load_cached_analyses", lambda _ids: {})
+    monkeypatch.setattr(pipeline, "store_analyses", lambda _entries: None)
     return calls
 
 
@@ -195,7 +189,7 @@ def test_generate_batches_stage3_per_chunk_and_expands_when_short(monkeypatch):
         "document_id": "doc", "num_questions": 2, "bloom_level": None,
         "retrieved_chunks": [_chunk("a")], "reserve_chunks": [_chunk("b", text_b)],
     }
-    out = asyncio.run(nodes.generate_questions(state))
+    out = asyncio.run(session_nodes.generate_questions(state))
 
     assert len(calls.stage1) == 2  # chunk "a" only had 2 points for 3 candidates -> reserve chunk "b" analysed
     assert sorted(calls.stage3) == [1, 2]  # one Stage 3 call per chunk
@@ -212,7 +206,7 @@ def test_generation_stops_once_enough_questions_are_final(monkeypatch):
         "document_id": "doc", "num_questions": 1, "bloom_level": None,
         "retrieved_chunks": [_chunk("a")], "reserve_chunks": [],
     }
-    out = asyncio.run(nodes.generate_questions(state))
+    out = asyncio.run(session_nodes.generate_questions(state))
 
     assert len(out["validated_questions"]) == 1  # 2 candidates were planned; the second is cancelled
     assert len(calls.validated) == 1
@@ -242,7 +236,7 @@ def test_top_up_analyses_reserve_chunk(monkeypatch):
         ],
     }
 
-    out = asyncio.run(nodes.top_up_questions(state))
+    out = asyncio.run(session_nodes.top_up_questions(state))
 
     assert len(calls.stage1) == 1  # only the reserve chunk is analysed; chunk "a" is cached
     assert [c["id"] for c in out["retrieved_chunks"]] == ["a", "r1"]
@@ -253,21 +247,8 @@ def test_top_up_analyses_reserve_chunk(monkeypatch):
 
 # ── Persistent Stage 1 cache ──
 
-def test_stage1_cache_roundtrip(monkeypatch):
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine, autoflush=False)
-
-    @contextmanager
-    def fake_get_session():
-        db = factory()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    monkeypatch.setattr(analysis_cache, "get_session", fake_get_session)
-    with fake_get_session() as db:
+def test_stage1_cache_roundtrip(db_factory):
+    with db_factory() as db:
         db.add(Document(id="d", filename="b.pdf", subject="IPAS"))
         db.add_all([Chunk(id="c1", document_id="d", text="x"), Chunk(id="c2", document_id="d", text="y")])
         db.commit()

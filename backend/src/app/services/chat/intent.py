@@ -3,13 +3,13 @@
 import logging
 import re
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, field_validator
 
-from app.schemas.api_schemas import GenerateParams
 from app.services.chat.prompts import ROUTER_PROMPT, SYSTEM_ROUTER_PERSONA
 from app.services.generation.planner import MIXED_BLOOM_LEVELS
+from app.services.generation.schemas import GenerateParams
 from app.services.generation.stage_runners import invoke_json
 
 if TYPE_CHECKING:
@@ -62,9 +62,9 @@ class ChatIntent(BaseModel):
 
     @field_validator("question_number", mode="before")
     @classmethod
-    def _to_int(cls, value: object) -> int | None:
+    def _to_int(cls, value: Any) -> int | None:
         try:
-            return int(value) if value not in (None, "", "null") else None  # type: ignore[call-overload]
+            return int(value) if value not in (None, "", "null") else None
         except (TypeError, ValueError):
             return None
 
@@ -167,10 +167,8 @@ def route_message(text: str, history: "Sequence[ChatMessage]", question_count: i
 def format_history(history: "Sequence[ChatMessage]", max_chars: int = 400) -> str:
     lines = []
     for m in history:
-        content = str(m.content)
-        if len(content) > max_chars:
-            content = content[:max_chars] + "…"
-        lines.append(f"{'Pengguna' if str(m.role) == 'user' else 'Asisten'}: {content}")
+        content = m.content if len(m.content) <= max_chars else m.content[:max_chars] + "…"
+        lines.append(f"{'Pengguna' if m.role == 'user' else 'Asisten'}: {content}")
     return "\n".join(lines) or "(kosong)"
 
 
